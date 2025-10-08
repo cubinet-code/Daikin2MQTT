@@ -17,7 +17,7 @@
 */
 
 
-const PROGMEM char* dk2mqtt_version = "1.3-b3";
+const PROGMEM char* dk2mqtt_version = "1.3-b4";
 
 //Define global variables for files
 const PROGMEM char* wifi_conf = "/wifi.json";
@@ -62,6 +62,8 @@ const PROGMEM char* HA_led = "mdi:wall-sconce-flat-variant";
 const PROGMEM char* HA_beep = "mdi:volume-high";
 const PROGMEM char* HA_counter = "mdi:counter";
 const PROGMEM char* HA_alert = "mdi:alert-circle";
+const PROGMEM char* HA_powerful = "mdi:wind-power";
+const PROGMEM char* HA_remote_off = "mdi:remote-off";
 
 
 //Define global variables for Others settings
@@ -97,6 +99,8 @@ String ha_select_vane_vertical_config_topic;
 String ha_select_vane_horizontal_config_topic;
 String ha_switch_unit_led_config_topic;
 String ha_switch_unit_beep_config_topic;
+String ha_switch_powerful_config_topic;
+String ha_switch_remote_enable_config_topic;
 
 String ha_discovery_topic;
 String ha_custom_packet_s21;
@@ -104,6 +108,8 @@ String ha_custom_query_experimental;
 String ha_availability_topic;
 String ha_switch_unit_led_set_topic;
 String ha_switch_unit_beep_set_topic;
+String ha_switch_powerful_set_topic;
+String ha_switch_remote_enable_set_topic;
 String hvac_name;
 
 //login

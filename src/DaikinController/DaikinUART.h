@@ -72,8 +72,10 @@ enum
 
 const String S21queryCmds[] = {
   "F1", 
+  "F3", //Powerful Mode (1)
   "F4", 
   "F5", //Error code
+  "F6", //Powerful Mode (2), comfort, quiet, streamer, etc.
   // "F9",
   "RH", 
   "RI", 

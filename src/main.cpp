@@ -459,6 +459,7 @@ void initMqtt()
   mqtt_client.setServer(mqtt_server.c_str(), atoi(mqtt_port.c_str()));
   mqtt_client.setCallback(mqttCallback);
   mqtt_client.setKeepAlive(120);
+  mqtt_client.setBufferSize(1024);
   mqttConnect();
 }
 
@@ -1643,6 +1644,7 @@ void readHeatPumpSettings()
   rootInfo["vane"] = currentSettings.verticalVane;
   rootInfo["wideVane"] = currentSettings.horizontalVane;
   rootInfo["mode"] = hpGetMode(currentSettings);
+  rootInfo["powerful"] = currentSettings.powerful;
 }
 
 void hpSettingsChanged()
@@ -1739,6 +1741,7 @@ void hpStatusChanged(HVACStatus currentStatus)
     rootInfo["action"] = hpGetAction(currentStatus, currentSettings);
     rootInfo["compressorFrequency"] = currentStatus.compressorFrequency;
     rootInfo["errorCode"] = currentStatus.errorCode;
+    rootInfo["powerful"] = currentSettings.powerful;
 
     if (ac.daikinUART->currentProtocol() == PROTOCOL_S21 && currentStatus.energyMeter != 0.0){
       // rootInfo["energyMeter"] = currentStatus.energyMeter;
@@ -1970,6 +1973,8 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   }
   else if (strcmp(topic, ha_custom_packet_s21.c_str()) == 0 && (ac.daikinUART->currentProtocol() == PROTOCOL_S21))
   { // send custom packet for advance user
+    // topic: .../<hostname>/send/s2a
+    // payload: 44 32 32 30 30 30  (command: D2, payload: 32 30 30 30)
     String custom = message;
 
     // copy custom packet to char array
@@ -2070,6 +2075,40 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     updateUnitSettings();
     saveUnitFeedback(beep,ledEnabled);
   }
+  else if (strcmp(topic, ha_switch_powerful_set_topic.c_str()) == 0)
+  {
+    String modeUpper = message;
+    modeUpper.toUpperCase();
+    if (modeUpper == "OFF")
+    {
+      ac.setPowerfulSetting("OFF");
+      playBeep(SET);
+      ac.update();
+    }
+    else if (modeUpper == "ON")
+    {
+      ac.setPowerfulSetting("ON");
+      playBeep(SET);
+      ac.update();
+    }
+  }
+   else if (strcmp(topic, ha_switch_remote_enable_set_topic.c_str()) == 0)
+  {
+    String modeUpper = message;
+    modeUpper.toUpperCase();
+    if (modeUpper == "OFF")
+    {
+      ac.setEnableRemote(false);
+      playBeep(SET);
+      ac.update();
+    }
+    else if (modeUpper == "ON")
+    {
+      ac.setEnableRemote(true);
+      playBeep(SET);
+      ac.update();
+    }
+  }
 
   else
   {
@@ -2139,7 +2178,7 @@ void haConfig()
   //
   //  Climate Entity
   //
-  const size_t capacityClimateConfig = JSON_ARRAY_SIZE(7) + 2 * JSON_ARRAY_SIZE(6) + JSON_ARRAY_SIZE(7) + JSON_ARRAY_SIZE(6)+ JSON_OBJECT_SIZE(30) + 2048;
+  const size_t capacityClimateConfig =  JSON_ARRAY_SIZE(7) + JSON_ARRAY_SIZE(7) + 2 * JSON_ARRAY_SIZE(6) + JSON_ARRAY_SIZE(7) + JSON_ARRAY_SIZE(6)+ JSON_OBJECT_SIZE(30) + 2048;
   DynamicJsonDocument haClimateConfig(capacityClimateConfig);
 
   haClimateConfig["name"] = nullptr;
@@ -2212,6 +2251,7 @@ void haConfig()
   haClimateConfig["fan_mode_stat_t"] = ha_state_topic;
   haClimateConfig["fan_mode_stat_tpl"] = F("{{ value_json.fan if (value_json is defined and value_json.fan is defined and value_json.fan|length) else 'SWING' }}"); // Set default value for fix "Could not parse data for HA"
 
+  //Vertical Swing
   if (ac.daikinUART->currentProtocol() == PROTOCOL_S21)
   {
     JsonArray haConfigSwing_modes = haClimateConfig.createNestedArray("swing_modes");
@@ -2232,6 +2272,17 @@ void haConfig()
     haClimateConfig["swing_mode_cmd_t"] = ha_vane_set_topic;
     haClimateConfig["swing_mode_stat_t"] = ha_state_topic;
     haClimateConfig["swing_mode_stat_tpl"] = F("{{ value_json.vane if (value_json is defined and value_json.vane is defined and value_json.vane|length) else 'SWING' }}"); // Set default value for fix "Could not parse data for HA"
+  }
+
+  //Horizontal Swing
+  if (ac.daikinUART->currentProtocol() == PROTOCOL_S21)
+  {
+    JsonArray haConfigSwing_horizontal_modes = haClimateConfig.createNestedArray("swing_horizontal_modes");
+    haConfigSwing_horizontal_modes.add("HOLD");
+    haConfigSwing_horizontal_modes.add("SWING");
+    haClimateConfig["swing_horizontal_mode_command_topic"] = ha_wideVane_set_topic;
+    haClimateConfig["swing_horizontal_mode_state_topic"] = ha_state_topic;
+    haClimateConfig["swing_horizontal_mode_state_template"] = F("{{ value_json.wideVane if (value_json is defined and value_json.wideVane is defined and value_json.wideVane|length) else 'SWING' }}"); // Set default value for fix "Could not parse data for HA"
   }
 
   haClimateConfig["action_topic"] = ha_state_topic;
@@ -2368,6 +2419,46 @@ void haConfig()
   mqtt_client.beginPublish(ha_switch_unit_beep_config_topic.c_str(), mqttOutput.length(), true);
   mqtt_client.print(mqttOutput);
   mqtt_client.endPublish();
+
+  // Powerful Mode Switch Config
+  if (ac.daikinUART->currentProtocol() == PROTOCOL_S21){
+    const size_t capacityPowerfulSwitchConfig = JSON_OBJECT_SIZE(7) + JSON_OBJECT_SIZE(8) + 2048;
+    DynamicJsonDocument haPowerfulSwitchConfig(capacityPowerfulSwitchConfig);
+    haPowerfulSwitchConfig["name"] = "Powerful Mode";
+    haPowerfulSwitchConfig["unique_id"] = getId() + "_powerful";
+    haPowerfulSwitchConfig["icon"] = HA_powerful;
+    haPowerfulSwitchConfig["command_topic"] = ha_switch_powerful_set_topic;
+    haPowerfulSwitchConfig["state_topic"] = ha_state_topic;
+    haPowerfulSwitchConfig["value_template"] = F("{{ value_json.powerful if (value_json is defined and value_json.powerful is defined and value_json.powerful|length) else 'OFF' }}"); 
+
+    addMQTTDeviceInfo(&haPowerfulSwitchConfig);
+    mqttOutput.clear();
+    serializeJson(haPowerfulSwitchConfig, mqttOutput);
+    mqtt_client.beginPublish(ha_switch_powerful_config_topic.c_str(), mqttOutput.length(), true);
+    mqtt_client.print(mqttOutput);
+    mqtt_client.endPublish();
+  }
+
+  // Disable / Enable remote switch (ON, OFF button since we can't find the way to check current state)
+  if (ac.daikinUART->currentProtocol() == PROTOCOL_S21){
+    const size_t capacityRemoteEnableSwitchConfig = JSON_OBJECT_SIZE(7) + JSON_OBJECT_SIZE(8) + 2048;
+    DynamicJsonDocument haRemoteEnableConfig(capacityRemoteEnableSwitchConfig);
+    haRemoteEnableConfig["name"] = "Enable IR Remote";
+    haRemoteEnableConfig["unique_id"] = getId() + "_enable_remote_ctrl";
+    haRemoteEnableConfig["icon"] = HA_remote_off;
+    haRemoteEnableConfig["optimistic"] = true;
+    haRemoteEnableConfig["command_topic"] = ha_switch_remote_enable_set_topic;
+    haRemoteEnableConfig["entity_category"] = "config";
+    // haPowerfulSwitchConfig["state_topic"] = ha_state_topic;
+    // haPowerfulSwitchConfig["value_template"] = F("{{ value_json.powerful if (value_json is defined and value_json.powerful is defined and value_json.powerful|length) else 'OFF' }}"); 
+
+    addMQTTDeviceInfo(&haRemoteEnableConfig);
+    mqttOutput.clear();
+    serializeJson(haRemoteEnableConfig, mqttOutput);
+    mqtt_client.beginPublish(ha_switch_remote_enable_config_topic.c_str(), mqttOutput.length(), true);
+    mqtt_client.print(mqttOutput);
+    mqtt_client.endPublish();
+  }
 }
 
 void mqttConnect()
@@ -2414,6 +2505,8 @@ void mqttConnect()
       mqtt_client.subscribe(ha_serial_send_topic.c_str());
       mqtt_client.subscribe(ha_switch_unit_led_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_unit_beep_set_topic.c_str());
+      mqtt_client.subscribe(ha_switch_powerful_set_topic.c_str());
+      mqtt_client.subscribe(ha_switch_remote_enable_set_topic.c_str());
       mqtt_client.publish(ha_availability_topic.c_str(), !_debugMode ? mqtt_payload_available : mqtt_payload_unavailable, true); // publish status as available
       if (others_haa)
       {
@@ -2815,6 +2908,8 @@ void setup()
       ha_availability_topic = mqtt_topic + "/" + mqtt_fn + "/availability";
       ha_switch_unit_led_set_topic = mqtt_topic + "/" + mqtt_fn + "/led/set";
       ha_switch_unit_beep_set_topic = mqtt_topic + "/" + mqtt_fn + "/beep/set";
+      ha_switch_powerful_set_topic = mqtt_topic + "/" + mqtt_fn + "/powerful/set";
+      ha_switch_remote_enable_set_topic =  mqtt_topic + "/" + mqtt_fn + "/remote_enable/set";
 
       if (others_haa)
       {
@@ -2830,6 +2925,8 @@ void setup()
         ha_select_vane_horizontal_config_topic = others_haa_topic + "/select/" + mqtt_fn + "/vane_horizontal/config";
         ha_switch_unit_led_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/led/config";
         ha_switch_unit_beep_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/beep/config";
+        ha_switch_powerful_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/powerful/config";
+        ha_switch_remote_enable_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/remote_enable/config";
       }
       // startup mqtt connection
       initMqtt();
@@ -2858,6 +2955,7 @@ void setup()
     rootInfo["action"] = hpGetAction(currentStatus, currentSettings);
     rootInfo["compressorFrequency"] = currentStatus.compressorFrequency;
     rootInfo["errorCode"] = currentStatus.errorCode;
+    rootInfo["powerful"] = currentSettings.powerful;
     lastTempSend = millis();
   }
   else

@@ -68,6 +68,8 @@ struct HVACSettings
   const char *fan;
   const char *verticalVane;   // vertical vane, up/down
   const char *horizontalVane; // horizontal vane, left/right
+  const char *powerful; 
+  bool remoteEnable;
   // bool connected;
 };
 
@@ -121,6 +123,9 @@ public:
   void setVerticalVaneSetting(const char *setting);
   const char *getHorizontalVaneSetting();
   void setHorizontalVaneSetting(const char *setting);
+  const char *getPowerfulSetting();
+  void setPowerfulSetting(const char *setting);
+  void setEnableRemote(bool enable);
   String getModelName();
 
   // Converter
@@ -142,20 +147,22 @@ public:
   void setStatusChangedCallback(STATUS_CHANGED_CALLBACK_SIGNATURE);
 
 private:
-  struct PendingSettings
+  struct PendingSettings 
   {
     bool basic;
     bool vane;
+    bool specialMode;
+    bool ACconfig;
   };
 
   HardwareSerial *_serial{nullptr};
 
   HVACStatus currentStatus{0, 0, 0, 0, 0, 0};
-  HVACSettings currentSettings{"OFF", "COOL", 25.0, "AUTO", "HOLD", "HOLD"};
-  HVACSettings newSettings{"OFF", "COOL", 25.0, "AUTO", "HOLD", "HOLD"}; // Mock data
+  HVACSettings currentSettings{"OFF", "COOL", 25.0, "AUTO", "HOLD", "HOLD", "OFF",true};
+  HVACSettings newSettings{"OFF", "COOL", 25.0, "AUTO", "HOLD", "HOLD","OFF", true}; // Mock data
 
   // Temporary setting value.
-  PendingSettings pendingSettings = {false, false};
+  PendingSettings pendingSettings = {false, false, false};
 
   unsigned long lastSyncMs = 0;
   bool use_RG_fan = false;

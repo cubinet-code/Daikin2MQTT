@@ -49,6 +49,10 @@ const char *VERTICALVANE_MAP[2] = {"HOLD", "SWING"};
 const byte HORIZONTALVANE[2] = {'0', '1'};
 const char *HORIZONTALVANE_MAP[2] = {"HOLD", "SWING"};
 
+
+const byte S21_POWERFUL[2] = {0x00, 0x02};
+const char *S21_POWERFUL_MAP[2] = {"OFF", "ON"};
+
 int16_t bytes_to_num(uint8_t *bytes, size_t len)
 {
   // <ones><tens><hundreds><neg/pos>
@@ -331,6 +335,11 @@ bool DaikinController::parseResponse(ACResponse *response)
         this->currentSettings.horizontalVane = (payload[0] & 2) ? HORIZONTALVANE_MAP[1] : HORIZONTALVANE_MAP[0];
         newSettings = currentSettings; // we need current AC setting for future control.
         return true;
+      
+      case '6':
+        this->currentSettings.powerful = (payload[0] == '0')? S21_POWERFUL_MAP[0]: S21_POWERFUL_MAP[1];
+        return true;
+
 
       case '9': // F9 -> G9 -- Temperature
         this->currentStatus.roomTemperature = (float)((signed)payload[0] - 0x80) / 2;
@@ -372,6 +381,7 @@ bool DaikinController::parseResponse(ACResponse *response)
           return true;
         }
         return false;
+
 
       default:
         if (payloadSize > 3)
@@ -555,6 +565,7 @@ bool DaikinController::readState()
   Log.ln(TAG, "\tCompressor Freq: " + String(this->currentStatus.compressorFrequency) + " Hz");
   Log.ln(TAG, "\tEnergy Meter: " + String(this->currentStatus.energyMeter) + " kWh");
   Log.ln(TAG, "\tError Code: " + this->currentStatus.errorCode );
+  Log.ln(TAG, "\tPowerful Cool: " + String(this->currentSettings.powerful) );
 
   Log.ln(TAG, "******************************************\n");
 
@@ -610,11 +621,6 @@ bool DaikinController::update(bool updateAll)
       payload[2] = c10_to_setpoint_byte(lroundf(round(newSettings.temperature * 2) / 2 * 10.0)),
       payload[3] = S21_FAN[lookupByteMapIndex(S21_FAN_MAP, 7, newSettings.fan)];
 
-      // LOGD_f(TAG,"Setting payload %x %x %x %x\n", cmd[0], cmd[1] ,cmd[2], cmd[3]);
-
-      // Log.ln(TAG, "sending command");
-      // Log.ln(TAG, "Free Stack Space:" + String(uxTaskGetStackHighWaterMark(NULL)));
-      // delay(50);
       res = daikinUART->sendCommandS21('D', '1', payload, 4) & res;
       pendingSettings.basic = false;
     }
@@ -635,6 +641,41 @@ bool DaikinController::update(bool updateAll)
       res = daikinUART->sendCommandS21('D', '5', payload, 4) & res;
       pendingSettings.vane = false;
     }
+    
+    if (pendingSettings.specialMode || updateAll)   
+    {
+      // D6 not working with FTKQ/FTKC, response NAK
+      payload[0] = '0' + S21_POWERFUL[lookupByteMapIndex(S21_POWERFUL_MAP, 2, newSettings.powerful)];
+      payload[1] = '0';
+      payload[2] = '0';
+      payload[3] = '0';
+      res = daikinUART->sendCommandS21('D', '6', payload, 4) & res;
+
+      // Does not work on FTKQ/FTKC Either
+      // payload[0] = '0'+ S21_POWERFUL[lookupByteMapIndex(S21_POWERFUL_MAP, 2, newSettings.powerful)];    //Timer stuff
+      // payload[1] = '0'+ S21_POWERFUL[lookupByteMapIndex(S21_POWERFUL_MAP, 2, newSettings.powerful)];
+      // payload[2] = '0'+ S21_POWERFUL[lookupByteMapIndex(S21_POWERFUL_MAP, 2, newSettings.powerful)];
+      // payload[3] = '0' + S21_POWERFUL[lookupByteMapIndex(S21_POWERFUL_MAP, 2, newSettings.powerful)];
+      // res = daikinUART->sendCommandS21('D', '3', payload, 4) & res;
+
+      pendingSettings.specialMode = false;
+
+    }
+        
+    if (pendingSettings.ACconfig || updateAll)
+    {
+
+      // Command D2
+      //payload[0]: 0x30 Enable IR Remote, 0x32 Disable IR Remote 
+      payload[0] = (newSettings.remoteEnable ? 0x30 : 0x32);
+      payload[1] = '0';
+      payload[2] = '0';
+      payload[3] = '0';
+      pendingSettings.ACconfig = false;
+      res = daikinUART->sendCommandS21('D', '2', payload, 4) & res;
+    }
+
+
   }
 
   // Commands for X50 Protocol
@@ -912,4 +953,33 @@ void DaikinController::setStatusChangedCallback(STATUS_CHANGED_CALLBACK_SIGNATUR
 String DaikinController::getModelName()
 {
   return this->currentStatus.modelName;
+}
+
+const char *DaikinController::getPowerfulSetting(){
+  return currentSettings.powerful;
+}
+
+void DaikinController::setPowerfulSetting(const char *setting){
+  if (daikinUART->currentProtocol()== PROTOCOL_S21)
+  {
+    int index = lookupByteMapIndex(S21_POWERFUL_MAP, 2, setting);
+    if (index > -1)
+    {
+      newSettings.powerful = S21_POWERFUL_MAP[index];
+    }
+    else
+    {
+      newSettings.powerful = S21_POWERFUL_MAP[0];
+    }
+    pendingSettings.specialMode = true;
+  }
+}
+
+// Enable / Disable physical controls from IR Remote / Front button.
+void DaikinController::setEnableRemote(bool isEnable){
+  if (daikinUART->currentProtocol()== PROTOCOL_S21)
+  {
+    newSettings.remoteEnable = isEnable;
+    pendingSettings.ACconfig = true;
+  }
 }
