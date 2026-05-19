@@ -80,6 +80,8 @@ struct HVACStatus
   float louverAngle;      // RN — measured louver angle
   int onTimerMinutes;     // RD — ON timer (minutes)
   int offTimerMinutes;    // RE — OFF timer (minutes)
+  int targetFanRPM;       // RK — outdoor unit fan commanded RPM
+  int loadSignal;         // Rb — indoor→outdoor ΔD frequency demand
 };
 
 // Raw payloads of S21 commands whose semantics aren't yet decoded.
@@ -91,13 +93,17 @@ struct HVACStatus
 // parseResponse() to populate it, and add an HA discovery entry in haConfig().
 struct DiagSensors
 {
-  // Existing unparsed v2 reads (already in S21queryCmds, payloads previously only logged)
+  // Single-byte F-class reads of unknown meaning (still polled, graphed in HA).
   String FA, FB, FG, FK, FN, FP, FQ, FS, FT;
-  // New 2-byte F-class reads discovered on FTKD-zv2s
+  // 2-byte F-class reads discovered on FTKD-zv2s, meanings still unknown.
   String FL, FR, FV;
-  // R-class reads discovered on FTKD-zv2s
-  String RA, RB, RC, RF, RK, Rb_, Rg_;   // _ to avoid clashing with potential macros
-  // FU extension sub-commands (sent with payload, response includes echo of sub-code)
+  // R-class reads with unknown semantics (RW observed constant "00" — possibly
+  // horizontal louver position or a different mode flag; graph in HA to decode).
+  String RW;
+  // FU extension sub-commands (sent with payload, response prefixed by sub-code echo).
+  // FU04 was suspected to be lifetime kWh but a 45-min sample showed the value
+  // decreasing while the AC ran — definitely not a monotonic counter. Exposed
+  // raw so the user can graph and we can re-decode with more samples.
   String FU00, FU02, FU04;
 };
 
@@ -226,6 +232,19 @@ private:
   bool _supportsHorizontalSwing = true;
 
   bool _skipRzB2 = false;  // RzB2 is not in the query array, needs its own skip flag
+
+  // FU<sub> extension reads (v2+). Each subcommand has its own skip flag because
+  // they're sent as one query with payload, not via S21queryCmds[].
+  bool _skipFU00 = false;
+  bool _skipFU02 = false;
+  bool _skipFU04 = false;
+
+  // Capability flags decoded from FU00 en_spmode bitmap (byte X = '3' if available).
+  // Defaults to false; set true when FU00 parser sees the corresponding byte = '3'.
+  // Drives HA discovery for econo/streamer entities (deferred to a follow-up).
+  bool _hasPowerful = false;
+  bool _hasEcono    = false;
+  bool _hasStreamer = false;
 
   // Protocol version from G8 (0 = unknown/v0, 2 = v2+ FTKD-zv2s class).
   // Read once per connection in G8 parser; used by supportsComfort() to gate

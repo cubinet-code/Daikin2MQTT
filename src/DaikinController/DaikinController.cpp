@@ -232,6 +232,27 @@ bool DaikinController::sync()
         Log.ln(TAG, "RzB2 not supported, skipping");
       }
     }
+
+    // FU<sub> extension reads — protocol v2+. Each sub-command is a 2-char ASCII
+    // selector echoed back at the start of the response payload. Self-skip on NAK.
+    //   FU00 — en_spmode bitmap (which special modes are available on this unit)
+    //   FU02 — temp/humidity limits (raw, decode pending)
+    //   FU04 — telemetry vector (originally suspected lifetime kWh; sample-disproved)
+    struct FUSend { const char *sub; bool *skip; } fuCmds[] = {
+      {"00", &_skipFU00}, {"02", &_skipFU02}, {"04", &_skipFU04}
+    };
+    for (auto &fu : fuCmds) {
+      if (*fu.skip) continue;
+      uint8_t fuPayload[] = { (uint8_t)fu.sub[0], (uint8_t)fu.sub[1] };
+      res = daikinUART->sendCommandS21('F', 'U', fuPayload, 2);
+      if (res) {
+        ACResponse response = daikinUART->getResponse();
+        parseResponse(&response);
+      } else if (daikinUART->lastResultWasNAK()) {
+        *fu.skip = true;
+        Log.ln(TAG, "FU%s not supported, skipping", fu.sub);
+      }
+    }
   }
 
   else if (daikinUART->currentProtocol() == PROTOCOL_X50)
@@ -469,12 +490,49 @@ bool DaikinController::parseResponse(ACResponse *response)
         this->currentStatus.energyMeter = s21_decode_hex_sensor(payload) / 10.0; // kWh
         return true;
 
-      default: // Log raw payload for unknown G-responses
-        Log.ln(TAG, "G%c raw (%d bytes): %02X %02X %02X %02X %02X %02X", cmd2_in, payloadSize,
-          payloadSize > 0 ? payload[0] : 0, payloadSize > 1 ? payload[1] : 0,
-          payloadSize > 2 ? payload[2] : 0, payloadSize > 3 ? payload[3] : 0,
-          payloadSize > 4 ? payload[4] : 0, payloadSize > 5 ? payload[5] : 0);
+      // FU<sub> -> GU<sub> -- protocol-v2 extension reads.
+      // Payload[0..1] echoes the sub-command; remaining bytes are the data.
+      case 'U':
+      {
+        if (payloadSize < 2) return false;
+        // Hex string of the data portion (after the 2-byte sub-echo)
+        String dataHex = getHEXformatted(&payload[2], payloadSize - 2);
+        if (payload[0] == '0' && payload[1] == '0') {
+          _diag.FU00 = dataHex;
+          // en_spmode bitmap: byte 0 = powerful, 1 = econo, 5 = streamer (Faikout).
+          // '3' = available on this unit. Used by haConfig() to gate switch entities.
+          if (payloadSize >= 3) _hasPowerful = (payload[2] == '3');
+          if (payloadSize >= 4) _hasEcono    = (payload[3] == '3');
+          if (payloadSize >= 8) _hasStreamer = (payload[7] == '3');
+        } else if (payload[0] == '0' && payload[1] == '2') {
+          _diag.FU02 = dataHex;
+        } else if (payload[0] == '0' && payload[1] == '4') {
+          _diag.FU04 = dataHex;
+        }
         return true;
+      }
+
+      default: // Unknown G-responses: stash raw hex in _diag for HA graphing
+      {
+        String hex = getHEXformatted(payload, payloadSize);
+        switch (cmd2_in) {
+          case 'A': _diag.FA = hex; break;
+          case 'B': _diag.FB = hex; break;
+          case 'G': _diag.FG = hex; break;
+          case 'K': _diag.FK = hex; break;
+          case 'L': _diag.FL = hex; break;
+          case 'N': _diag.FN = hex; break;
+          case 'P': _diag.FP = hex; break;
+          case 'Q': _diag.FQ = hex; break;
+          case 'R': _diag.FR = hex; break;
+          case 'S': _diag.FS = hex; break;
+          case 'T': _diag.FT = hex; break;
+          case 'V': _diag.FV = hex; break;
+          default: break;  // unmapped — only logged
+        }
+        Log.ln(TAG, "G%c raw (%d bytes): %s", cmd2_in, payloadSize, hex.c_str());
+        return true;
+      }
       }
 
       break;
@@ -560,12 +618,27 @@ bool DaikinController::parseResponse(ACResponse *response)
         }
         return false;
 
-      default: // Log raw payload for unknown S-responses
-        Log.ln(TAG, "S%c raw (%d bytes): %02X %02X %02X %02X %02X %02X", cmd2_in, payloadSize,
-          payloadSize > 0 ? payload[0] : 0, payloadSize > 1 ? payload[1] : 0,
-          payloadSize > 2 ? payload[2] : 0, payloadSize > 3 ? payload[3] : 0,
-          payloadSize > 4 ? payload[4] : 0, payloadSize > 5 ? payload[5] : 0);
+      case 'K': // RK -> SK -- Target fan RPM × 10 (outdoor unit command frequency)
+      {
+        int targetRpm = bytes_to_num(&payload[0], payloadSize) * 10;
+        this->currentStatus.targetFanRPM = targetRpm;
         return true;
+      }
+
+      case 'b': // Rb -> Sb -- Indoor "load signal" (ΔD frequency demand to ODU)
+      {
+        int loadSig = bytes_to_num(&payload[0], payloadSize);
+        this->currentStatus.loadSignal = loadSig;
+        return true;
+      }
+
+      default:
+      {
+        String hex = getHEXformatted(payload, payloadSize);
+        if (cmd2_in == 'W') _diag.RW = hex;
+        Log.ln(TAG, "S%c raw (%d bytes): %s", cmd2_in, payloadSize, hex.c_str());
+        return true;
+      }
       }
     }
 

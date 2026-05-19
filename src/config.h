@@ -114,6 +114,7 @@ String ha_custom_packet_s21;
 String ha_custom_query_experimental;
 String ha_recv_s21;
 String ha_recv_s21exp;
+String ha_diag_topic;
 String ha_availability_topic;
 String ha_switch_unit_led_set_topic;
 String ha_switch_unit_beep_set_topic;

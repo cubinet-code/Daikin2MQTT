@@ -1657,6 +1657,8 @@ void populateRootInfo(const HVACSettings &settings, const HVACStatus &status, bo
     rootInfo["louverAngle"] = status.louverAngle;
     rootInfo["onTimerMinutes"] = status.onTimerMinutes;
     rootInfo["offTimerMinutes"] = status.offTimerMinutes;
+    rootInfo["targetFanRPM"] = status.targetFanRPM;
+    rootInfo["loadSignal"]   = status.loadSignal;
     rootInfo["uptime"] = millis() / 1000;
   }
 }
@@ -1750,6 +1752,26 @@ String hpGetAction(const HVACStatus &hpStatus, const HVACSettings &hpSettings)
 }
 
 // Publish climate state immediately, bypassing the update_int / POLL_DELAY_AFTER_SET_MS gate.
+// Publish raw S21 payload fields (whose semantics aren't yet decoded) as one
+// JSON blob to .../diag. HA's MQTT sensors pick out individual fields via
+// value_template. Keeps the main /state payload uncluttered while still letting
+// users graph the raw bytes and watch for patterns that hint at meaning.
+void publishDiag()
+{
+  if (ac.daikinUART->currentProtocol() != PROTOCOL_S21) return;
+  const DiagSensors &d = ac.getDiag();
+  JsonDocument doc;
+  doc["FA"] = d.FA;     doc["FB"] = d.FB;     doc["FG"] = d.FG;
+  doc["FK"] = d.FK;     doc["FL"] = d.FL;     doc["FN"] = d.FN;
+  doc["FP"] = d.FP;     doc["FQ"] = d.FQ;     doc["FR"] = d.FR;
+  doc["FS"] = d.FS;     doc["FT"] = d.FT;     doc["FV"] = d.FV;
+  doc["RW"] = d.RW;
+  doc["FU00"] = d.FU00; doc["FU02"] = d.FU02; doc["FU04"] = d.FU04;
+  String out;
+  serializeJson(doc, out);
+  mqtt_client.publish_P(ha_diag_topic.c_str(), out.c_str(), false);
+}
+
 // Use from MQTT set-handlers (powerful, preset) so HA's switch echo arrives within ms instead
 // of waiting for the next gated periodic publish.
 void publishHpState()
@@ -1771,6 +1793,7 @@ void publishHpState()
     if (_debugMode)
       mqtt_client.publish(ha_debug_topic.c_str(), (char *)("Failed to publish hp status change"));
   }
+  publishDiag();
 
   updateUnitSettings();
 
@@ -2060,10 +2083,13 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   }
   else if (strcmp(topic, ha_preset_mode_set_topic.c_str()) == 0)
   {
-    const char *newPowerful = (strcmp(message, "boost") == 0) ? "ON" : "OFF";
-    if (strcmp(newPowerful, ac.getPowerfulSetting()) != 0)
-    {
-      ac.setPowerfulSetting(newPowerful);
+    // HA presets are mutually exclusive; map them to the two switches so only one is ON.
+    const char *newPowerful = (strcmp(message, "boost") == 0)   ? "ON" : "OFF";
+    const char *newComfort  = (strcmp(message, "comfort") == 0) ? "ON" : "OFF";
+    bool changed = false;
+    if (strcmp(newPowerful, ac.getPowerfulSetting()) != 0) { ac.setPowerfulSetting(newPowerful); changed = true; }
+    if (strcmp(newComfort,  ac.getComfortSetting())  != 0) { ac.setComfortSetting(newComfort);   changed = true; }
+    if (changed) {
       playBeep(SET);
       ac.update();
       publishHpState();
@@ -2331,13 +2357,18 @@ void haConfig()
     haClimateConfig["swing_horizontal_mode_state_template"] = F("{% set map = {'hold':'Hold','swing':'Swing'} %}{% set v = value_json.wideVane if (value_json is defined and value_json.wideVane is defined) else 'swing' %}{{ map.get(v, v) }}");
   }
 
-  // Preset modes (Powerful = boost) — only if unit supports D6/F6
+  // Preset modes: boost = powerful, comfort = ceiling-airflow. Mutually exclusive in HA.
   if (proto == PROTOCOL_S21 && ac.supportsPowerful()) {
     JsonArray presetModes = haClimateConfig["preset_modes"].to<JsonArray>();
     presetModes.add("boost");
+    if (ac.supportsComfort()) presetModes.add("comfort");
     haClimateConfig["preset_mode_command_topic"] = ha_preset_mode_set_topic;
     haClimateConfig["preset_mode_state_topic"] = ha_state_topic;
-    haClimateConfig["preset_mode_value_template"] = F("{{ 'boost' if (value_json is defined and value_json.powerful is defined and value_json.powerful == 'ON') else 'none' }}");
+    // Priority: powerful → boost; else comfort → comfort; else none.
+    haClimateConfig["preset_mode_value_template"] = F(
+      "{% if value_json is defined and value_json.powerful is defined and value_json.powerful == 'ON' %}boost"
+      "{% elif value_json is defined and value_json.comfort is defined and value_json.comfort == 'ON' %}comfort"
+      "{% else %}none{% endif %}");
   }
 
   haClimateConfig["action_topic"] = ha_state_topic;
@@ -2433,6 +2464,31 @@ void haConfig()
       ha_switch_comfort_set_topic, ha_state_topic,
       F("{{ value_json.comfort if (value_json is defined and value_json.comfort is defined and value_json.comfort|length) else 'OFF' }}"),
       ha_switch_comfort_config_topic);
+  }
+
+  // Decoded protocol-v2 telemetry from RK/Rb (no v0 fallback — won't appear if FK absent).
+  if (proto == PROTOCOL_S21 && others_haa) {
+    String diagPrefix = others_haa_topic + "/sensor/" + mqtt_fn + "/";
+    publishMQTTSensorConfig("Outdoor Fan Target RPM", "_target_fan_rpm", HA_turbine_icon, "RPM", NULL,
+      ha_state_topic, jsonValueTemplate("targetFanRPM"),
+      diagPrefix + "target_fan_rpm/config", "diagnostic");
+    publishMQTTSensorConfig("Indoor Load Signal", "_load_signal", "mdi:gauge", NULL, NULL,
+      ha_state_topic, jsonValueTemplate("loadSignal"),
+      diagPrefix + "load_signal/config", "diagnostic");
+
+    // Raw S21 payloads we don't fully understand yet — exposed for graphing.
+    // Naming convention: HA entity "Raw <CMD>" so user can grep in dashboard.
+    static const char *diagCmds[] = {
+      "FA","FB","FG","FK","FL","FN","FP","FQ","FR","FS","FT","FV","RW",
+      "FU00","FU02","FU04"
+    };
+    for (const char *cmd : diagCmds) {
+      String suffix = String("_diag_") + cmd;
+      String configTopic = diagPrefix + "diag_" + cmd + "/config";
+      String entityName = String("Raw ") + cmd;
+      publishMQTTSensorConfig(entityName.c_str(), suffix.c_str(), "mdi:code-tags", NULL, NULL,
+        ha_diag_topic, jsonValueTemplate(cmd), configTopic, "diagnostic");
+    }
   }
 
   // Disable / Enable remote switch
@@ -2886,6 +2942,7 @@ void setup()
       ha_custom_query_experimental = mqtt_topic + "/" + mqtt_fn + "/send/s21exp";
       ha_recv_s21 = mqtt_topic + "/" + mqtt_fn + "/recv/s21";
       ha_recv_s21exp = mqtt_topic + "/" + mqtt_fn + "/recv/s21exp";
+      ha_diag_topic = mqtt_topic + "/" + mqtt_fn + "/diag";
       ha_availability_topic = mqtt_topic + "/" + mqtt_fn + "/availability";
       ha_switch_unit_led_set_topic = mqtt_topic + "/" + mqtt_fn + "/led/set";
       ha_switch_unit_beep_set_topic = mqtt_topic + "/" + mqtt_fn + "/beep/set";
