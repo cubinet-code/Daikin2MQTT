@@ -121,6 +121,7 @@ public:
   const char *getPowerfulSetting();
   void setPowerfulSetting(const char *setting);
   void setEnableRemote(bool enable);
+  bool getDesiredRemoteEnable() { return newSettings.remoteEnable; }
   void setSyncInterval(uint32_t ms) { _syncIntervalMs = ms; }
   String getModelName();
 

@@ -103,6 +103,7 @@ String hpGetMode(const HVACSettings &hvacSettings);
 void haConfig();
 String hpGetAction(const HVACStatus &hpStatus, const HVACSettings &hpSettings);
 void hpStatusChanged(const HVACStatus &currentStatus);
+void publishHpState();
 void playBeep(Buzzer_preset buzzer_preset);
 void updateUnitSettings();
 void testMode()
@@ -435,7 +436,7 @@ void saveOthers(String haa, String haat, String availability_report, String debu
 
 void saveUnitFeedback(bool beepEnabled, bool ledEnabled){
 
-  saveUnit(useFahrenheit?"fah":"cel",  supportHeatMode?"all":"nht", String(update_int/1000), login_password, String(min_temp), String(max_temp), temp_step, beep?"1":"0", ledEnabled?"1":"0", String(inside_temp_offset, 1), String(outside_temp_offset, 1), String(fan_speed_levels), remoteEnable?"1":"0");
+  saveUnit(useFahrenheit?"fah":"cel",  supportHeatMode?"all":"nht", String(update_int/1000), login_password, String(min_temp), String(max_temp), temp_step, beep?"1":"0", ledEnabled?"1":"0", String(inside_temp_offset, 1), String(outside_temp_offset, 1), String(fan_speed_levels), ac.getDesiredRemoteEnable()?"1":"0");
 }
 
 // Initialize captive portal page
@@ -584,8 +585,10 @@ bool loadUnit()
   ledEnabled = ledEnabledStr == "1";
 
   if (doc["remoteEnable"].is<JsonVariant>()) {
-    String remoteEnableStr = doc["remoteEnable"].as<String>();
-    remoteEnable = remoteEnableStr != "0";  // default true if key missing or malformed
+    // S21 doesn't report IR-lock state, so we persist the user's last choice
+    // and apply it here (before connect/sync). The controller flushes D2 with
+    // this value in onFirstQuerySuccess() after the first F1/F5/... reads.
+    ac.setEnableRemote(doc["remoteEnable"].as<String>() != "0");
   }
 
   if (doc["inside_temp_offset"].is<JsonVariant>())
@@ -949,7 +952,7 @@ void handleUnit()
 
   if (server.method() == HTTP_POST)
   {
-    saveUnit(server.arg("tu"), server.arg("md"), server.arg("update_int"), server.arg("lpw"), (String)convertLocalUnitToCelsius(server.arg("min_temp").toInt(), useFahrenheit), (String)convertLocalUnitToCelsius(server.arg("max_temp").toInt(), useFahrenheit), server.arg("temp_step"), server.arg("beep"), server.arg("led"), server.arg("inside_offset"), server.arg("outside_offset"), server.arg("fan_levels"), remoteEnable?"1":"0");
+    saveUnit(server.arg("tu"), server.arg("md"), server.arg("update_int"), server.arg("lpw"), (String)convertLocalUnitToCelsius(server.arg("min_temp").toInt(), useFahrenheit), (String)convertLocalUnitToCelsius(server.arg("max_temp").toInt(), useFahrenheit), server.arg("temp_step"), server.arg("beep"), server.arg("led"), server.arg("inside_offset"), server.arg("outside_offset"), server.arg("fan_levels"), ac.getDesiredRemoteEnable()?"1":"0");
     rebootAndSendPage();
   }
   else
@@ -1620,7 +1623,8 @@ void change_states()
     {
       digitalWrite(LED_ACT, HIGH);
       playBeep(SET);
-      ac.update(true);
+      ac.update();
+      publishHpState();
       lastCommandSend = millis();
       digitalWrite(LED_ACT, LOW);
     }
@@ -1821,13 +1825,13 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   // HA topics
   // Pattern: stage the change (ac.setX), commit it (ac.update sends D1/D5/...),
   // then publishHpState() pushes the new authoritative state to HA immediately.
-  // The controller mirrors newSettings → currentSettings on each successful D-command,
-  // so ac.getSettings() reflects truth by the time publishHpState reads it.
+  // Each handler also short-circuits when the requested value already matches
+  // current state — no beep, no UART traffic, no MQTT republish for no-ops.
   if (strcmp(topic, ha_power_set_topic.c_str()) == 0)
   {
     String modeUpper = message;
     modeUpper.toUpperCase();
-    if (modeUpper == "ON" || modeUpper == "OFF")
+    if ((modeUpper == "ON" || modeUpper == "OFF") && strcmp(modeUpper.c_str(), ac.getPowerSetting()) != 0)
     {
       ac.setPowerSetting(modeUpper.c_str());
       playBeep(modeUpper == "ON" ? ON : OFF);
@@ -1842,10 +1846,13 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
 
     if (modeUpper == "OFF")
     {
-      playBeep(OFF);
-      ac.setPowerSetting("OFF");
-      ac.update();
-      publishHpState();
+      if (strcmp("OFF", ac.getPowerSetting()) != 0)
+      {
+        playBeep(OFF);
+        ac.setPowerSetting("OFF");
+        ac.update();
+        publishHpState();
+      }
     }
     else
     {
@@ -1855,7 +1862,9 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
           modeUpper == "FAN_ONLY"  ? "FAN"  :
           (modeUpper == "HEAT" || modeUpper == "COOL" || modeUpper == "DRY" || modeUpper == "AUTO")
               ? modeUpper.c_str() : nullptr;
-      if (s21Mode != nullptr)
+      bool powerOn = strcmp("ON", ac.getPowerSetting()) == 0;
+      bool modeMatches = s21Mode != nullptr && strcasecmp(s21Mode, ac.getModeSetting()) == 0;
+      if (s21Mode != nullptr && !(powerOn && modeMatches))
       {
         playBeep(ON);
         ac.setPowerSetting("ON");
@@ -1868,7 +1877,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   else if (strcmp(topic, ha_temp_set_topic.c_str()) == 0)
   {
     float temperature_c = convertLocalUnitToCelsius(strtof(message, NULL), useFahrenheit);
-    if (temperature_c >= min_temp && temperature_c <= max_temp)
+    if (temperature_c >= min_temp && temperature_c <= max_temp && fabsf(temperature_c - ac.getTemperature()) >= 0.05f)
     {
       playBeep(SET);
       ac.setTemperature(temperature_c);
@@ -1878,24 +1887,33 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   }
   else if (strcmp(topic, ha_fan_set_topic.c_str()) == 0)
   {
-    playBeep(SET);
-    ac.setFanSpeed(message);
-    ac.update();
-    publishHpState();
+    if (strcasecmp(message, ac.getFanSpeed()) != 0)
+    {
+      playBeep(SET);
+      ac.setFanSpeed(message);
+      ac.update();
+      publishHpState();
+    }
   }
   else if (strcmp(topic, ha_vane_set_topic.c_str()) == 0)
   {
-    playBeep(SET);
-    ac.setVerticalVaneSetting(message);
-    ac.update();
-    publishHpState();
+    if (strcasecmp(message, ac.getVerticalVaneSetting()) != 0)
+    {
+      playBeep(SET);
+      ac.setVerticalVaneSetting(message);
+      ac.update();
+      publishHpState();
+    }
   }
   else if (strcmp(topic, ha_wideVane_set_topic.c_str()) == 0 && (ac.daikinUART->currentProtocol() == PROTOCOL_S21))
   {
-    playBeep(SET);
-    ac.setHorizontalVaneSetting(message);
-    ac.update();
-    publishHpState();
+    if (strcasecmp(message, ac.getHorizontalVaneSetting()) != 0)
+    {
+      playBeep(SET);
+      ac.setHorizontalVaneSetting(message);
+      ac.update();
+      publishHpState();
+    }
   }
   // else if (strcmp(topic, ha_remote_temp_set_topic.c_str()) == 0) {
   //   float temperature = strtof(message, NULL);
@@ -2047,10 +2065,9 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     String modeUpper = message;
     modeUpper.toUpperCase();
     bool newState = (modeUpper == "ON");
-    if ((modeUpper == "ON" || modeUpper == "OFF") && newState != remoteEnable)
+    if ((modeUpper == "ON" || modeUpper == "OFF") && newState != ac.getDesiredRemoteEnable())
     {
       ac.setEnableRemote(newState);
-      remoteEnable = newState;
       saveUnitFeedback(beep, ledEnabled);
       playBeep(SET);
       ac.update();
@@ -2645,6 +2662,7 @@ void handleButton()
         digitalWrite(LED_ACT, HIGH);
         ac.togglePower();
         ac.update();
+        publishHpState();
         digitalWrite(LED_ACT, LOW);
       }
       else

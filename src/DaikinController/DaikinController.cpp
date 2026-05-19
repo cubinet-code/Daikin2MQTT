@@ -155,6 +155,19 @@ void DaikinController::onFirstQuerySuccess()
       parseResponse(&response);
     }
   }
+  else if (daikinUART->currentProtocol() == PROTOCOL_S21)
+  {
+    // Flush the persisted IR-remote-enable state to the AC on first connect.
+    // Newer units (e.g. model 7B91, protocol v2) auto-lock the IR remote when an
+    // S21 master appears; without this, the user's last saved choice is ignored
+    // on reboot. syncNewSettings() first to pick up the AC's current state for
+    // every other field (otherwise newSettings still has constructor defaults
+    // for power/mode/fan because pendingSettings.ACconfig=true blocked the gated
+    // syncNewSettings inside parseResponse).
+    syncNewSettings();
+    pendingSettings.ACconfig = true;
+    update();
+  }
 }
 
 // sync() — Main polling loop, called every ~10s from main loop.
