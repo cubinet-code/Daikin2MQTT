@@ -760,7 +760,14 @@ bool DaikinController::update(bool updateAll)
       payload[2] = c10_to_setpoint_byte(lroundf(round(newSettings.temperature * 2) / 2 * 10.0)),
       payload[3] = S21_FAN[lookupByteMapIndex(S21_FAN_MAP, 7, newSettings.fan)];
 
-      res = daikinUART->sendCommandS21('D', '1', payload, 4) & res;
+      bool d1ok = daikinUART->sendCommandS21('D', '1', payload, 4);
+      if (d1ok) {
+        currentSettings.power = newSettings.power;
+        currentSettings.mode = newSettings.mode;
+        currentSettings.temperature = newSettings.temperature;
+        currentSettings.fan = newSettings.fan;
+      }
+      res = d1ok & res;
       pendingSettings.basic = false;
     }
 
@@ -770,14 +777,17 @@ bool DaikinController::update(bool updateAll)
       bool hVane = strcmp(HORIZONTALVANE_MAP[1], newSettings.horizontalVane) == 0;
       bool vVane = strcmp(VERTICALVANE_MAP[1], newSettings.verticalVane) == 0;
 
-      // LOGD_f(TAG,"Swing state v:%d %s h:%d %s\n", vVane, newSettings.verticalVane , hVane , newSettings.horizontalVane);
-
       payload[0] = ('0' + (hVane ? 2 : 0) + (vVane ? 1 : 0) + (hVane && vVane ? 4 : 0));
       payload[1] = (vVane || hVane ? '?' : '0');
       payload[2] = '0';
       payload[3] = '0';
 
-      res = daikinUART->sendCommandS21('D', '5', payload, 4) & res;
+      bool d5ok = daikinUART->sendCommandS21('D', '5', payload, 4);
+      if (d5ok) {
+        currentSettings.verticalVane = newSettings.verticalVane;
+        currentSettings.horizontalVane = newSettings.horizontalVane;
+      }
+      res = d5ok & res;
       pendingSettings.vane = false;
     }
     
@@ -803,6 +813,9 @@ bool DaikinController::update(bool updateAll)
         payload[3] = '0' + S21_POWERFUL[lookupByteMapIndex(S21_POWERFUL_MAP, 2, newSettings.powerful)];
         sent = daikinUART->sendCommandS21('D', '3', payload, 4);
         if (!sent) Log.ln(TAG, "D3 fallback also failed — powerful mode not supported");
+      }
+      if (sent) {
+        currentSettings.powerful = newSettings.powerful;  // mirror so state echo is immediate
       }
       res = res & sent;
       pendingSettings.specialMode = false;

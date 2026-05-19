@@ -1744,40 +1744,42 @@ String hpGetAction(const HVACStatus &hpStatus, const HVACSettings &hpSettings)
     return hpmode; // unknown
 }
 
+// Publish climate state immediately, bypassing the update_int / POLL_DELAY_AFTER_SET_MS gate.
+// Use from MQTT set-handlers (powerful, preset) so HA's switch echo arrives within ms instead
+// of waiting for the next gated periodic publish.
+void publishHpState()
+{
+  const HVACStatus &currentStatus = ac.getStatus();
+  if (currentStatus.roomTemperature == 0)
+    return;
+
+  populateRootInfo(ac.getSettings(), currentStatus, true);
+
+  if (ac.daikinUART->currentProtocol() == PROTOCOL_S21 && currentStatus.energyMeter != 0.0){
+    rootInfo["energyMeter"] = (int)(currentStatus.energyMeter * 100 + 0.5) / 100.0;
+  }
+  String mqttOutput;
+  serializeJson(rootInfo, mqttOutput);
+
+  if (!mqtt_client.publish_P(ha_state_topic.c_str(), mqttOutput.c_str(), false))
+  {
+    if (_debugMode)
+      mqtt_client.publish(ha_debug_topic.c_str(), (char *)("Failed to publish hp status change"));
+  }
+
+  updateUnitSettings();
+
+  if (others_haa && ac.needsRediscovery()) {
+    haConfig();
+    ac.clearRediscovery();
+  }
+}
+
 void hpStatusChanged(const HVACStatus &currentStatus)
 {
   if ((millis() > (lastTempSend + update_int)) && (millis() > (lastCommandSend + POLL_DELAY_AFTER_SET_MS)))
-  { // only send the temperature every update_int interval and not just sent command to A/C.
-
-    // send room temp, operating info and all information
-    const HVACSettings &currentSettings = ac.getSettings();
-
-    if (currentStatus.roomTemperature == 0)
-      return;
-
-    populateRootInfo(currentSettings, currentStatus, true);
-
-    if (ac.daikinUART->currentProtocol() == PROTOCOL_S21 && currentStatus.energyMeter != 0.0){
-      rootInfo["energyMeter"] = (int)(currentStatus.energyMeter * 100 + 0.5) / 100.0;
-    }
-    String mqttOutput;
-    serializeJson(rootInfo, mqttOutput);
-
-    if (!mqtt_client.publish_P(ha_state_topic.c_str(), mqttOutput.c_str(), false))
-    {
-      if (_debugMode)
-        mqtt_client.publish(ha_debug_topic.c_str(), (char *)("Failed to publish hp status change"));
-    }
-
-    //Update unit setting (Beep & LED to MQTT as well)
-    updateUnitSettings();
-
-    // Republish HA discovery if new capabilities detected at runtime
-    if (others_haa && ac.needsRediscovery()) {
-      haConfig();
-      ac.clearRediscovery();
-    }
-
+  {
+    publishHpState();
     lastTempSend = millis();
   }
 }
@@ -1803,24 +1805,6 @@ void updateUnitSettings(){
     }
 }
 
-// Used to send a dummy packet in state topic to validate action in HA interface
-void hpSendLocalState()
-{
-
-  // Publish current state to MQTT before sending command to unit
-  String mqttOutput;
-  serializeJson(rootInfo, mqttOutput);
-  Log.ln(TAG, "Update State: %s\n", mqttOutput.c_str());
-  if (!mqtt_client.publish_P(ha_state_topic.c_str(), mqttOutput.c_str(), false))
-  {
-    if (_debugMode)
-      mqtt_client.publish(ha_debug_topic.c_str(), (char *)("Failed to publish dummy hp status change"));
-  }
-
-  // Restart counter for waiting enought time for the unit to update before sending a state packet
-  lastTempSend = millis();
-}
-
 void mqttCallback(char *topic, byte *payload, unsigned int length)
 {
 
@@ -1835,122 +1819,82 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   message[length] = '\0';
 
   // HA topics
-  // Receive power topic
+  // Pattern: stage the change (ac.setX), commit it (ac.update sends D1/D5/...),
+  // then publishHpState() pushes the new authoritative state to HA immediately.
+  // The controller mirrors newSettings → currentSettings on each successful D-command,
+  // so ac.getSettings() reflects truth by the time publishHpState reads it.
   if (strcmp(topic, ha_power_set_topic.c_str()) == 0)
   {
     String modeUpper = message;
     modeUpper.toUpperCase();
-    if (modeUpper == "OFF")
+    if (modeUpper == "ON" || modeUpper == "OFF")
     {
-      ac.setPowerSetting("OFF");
-      playBeep(OFF);
+      ac.setPowerSetting(modeUpper.c_str());
+      playBeep(modeUpper == "ON" ? ON : OFF);
       ac.update();
-    }
-    else if (modeUpper == "ON")
-    {
-      ac.setPowerSetting("ON");
-      playBeep(ON);
-      ac.update();
+      publishHpState();
     }
   }
   else if (strcmp(topic, ha_mode_set_topic.c_str()) == 0)
   {
     String modeUpper = message;
     modeUpper.toUpperCase();
+    bool valid = true;
     if (modeUpper == "OFF")
     {
-      rootInfo["mode"] = "off";
-      rootInfo["action"] = "off";
-      hpSendLocalState();
       playBeep(OFF);
       ac.setPowerSetting("OFF");
     }
     else
     {
-      playBeep(ON);
-      if (modeUpper == "HEAT_COOL")
+      // Translate HA HVAC mode names to S21 mode tokens.
+      if      (modeUpper == "HEAT_COOL") modeUpper = "AUTO";
+      else if (modeUpper == "FAN_ONLY")  modeUpper = "FAN";
+      else if (modeUpper != "HEAT" && modeUpper != "COOL" && modeUpper != "DRY" && modeUpper != "AUTO")
+        valid = false; // unknown mode — ignore
+      if (valid)
       {
-        rootInfo["mode"] = "heat_cool";
-        rootInfo["action"] = "idle";
-        modeUpper = "AUTO";
+        playBeep(ON);
+        ac.setPowerSetting("ON");
+        ac.setModeSetting(modeUpper.c_str());
       }
-      else if (modeUpper == "HEAT")
-      {
-        rootInfo["mode"] = "heat";
-        rootInfo["action"] = "heating";
-      }
-      else if (modeUpper == "COOL")
-      {
-        rootInfo["mode"] = "cool";
-        rootInfo["action"] = "cooling";
-      }
-      else if (modeUpper == "DRY")
-      {
-        rootInfo["mode"] = "dry";
-        rootInfo["action"] = "drying";
-      }
-      else if (modeUpper == "FAN_ONLY")
-      {
-        rootInfo["mode"] = "fan_only";
-        rootInfo["action"] = "fan";
-        modeUpper = "FAN";
-      }
-      else
-      {
-        return;
-      }
-      hpSendLocalState();
-      ac.setPowerSetting("ON");
-      ac.setModeSetting(modeUpper.c_str());
     }
-    ac.update();
+    if (valid)
+    {
+      ac.update();
+      publishHpState();
+    }
   }
   else if (strcmp(topic, ha_temp_set_topic.c_str()) == 0)
   {
-
-
     float temperature = strtof(message, NULL);
     float temperature_c = convertLocalUnitToCelsius(temperature, useFahrenheit);
-
-    if (temperature_c < min_temp || temperature_c > max_temp)
-    {
-      temperature_c = 23;
-      rootInfo["temperature"] = convertCelsiusToLocalUnit(temperature_c, useFahrenheit);
-    }
-    else
-    {
-      rootInfo["temperature"] = temperature;
-    }
+    if (temperature_c < min_temp || temperature_c > max_temp) temperature_c = 23;
     playBeep(SET);
-    hpSendLocalState();
     ac.setTemperature(temperature_c);
     ac.update();
+    publishHpState();
   }
   else if (strcmp(topic, ha_fan_set_topic.c_str()) == 0)
   {
-    rootInfo["fan"] = (String)message;
     playBeep(SET);
-    hpSendLocalState();
     ac.setFanSpeed(message);
     ac.update();
+    publishHpState();
   }
   else if (strcmp(topic, ha_vane_set_topic.c_str()) == 0)
   {
-    // LOGD_f(TAG, "Set vertical vane %s\n",message);
-    rootInfo["vane"] = (String)message;
     playBeep(SET);
-    hpSendLocalState();
     ac.setVerticalVaneSetting(message);
     ac.update();
+    publishHpState();
   }
   else if (strcmp(topic, ha_wideVane_set_topic.c_str()) == 0 && (ac.daikinUART->currentProtocol() == PROTOCOL_S21))
   {
-    // LOGD_f(TAG, "Wide Vane = %s\n", message);
-    rootInfo["wideVane"] = (String)message;
     playBeep(SET);
-    hpSendLocalState();
     ac.setHorizontalVaneSetting(message);
     ac.update();
+    publishHpState();
   }
   // else if (strcmp(topic, ha_remote_temp_set_topic.c_str()) == 0) {
   //   float temperature = strtof(message, NULL);
@@ -2078,28 +2022,24 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   {
     String modeUpper = message;
     modeUpper.toUpperCase();
-    if (modeUpper == "OFF")
+    if ((modeUpper == "ON" || modeUpper == "OFF") && strcmp(modeUpper.c_str(), ac.getPowerfulSetting()) != 0)
     {
-      ac.setPowerfulSetting("OFF");
+      ac.setPowerfulSetting(modeUpper.c_str());
       playBeep(SET);
       ac.update();
-    }
-    else if (modeUpper == "ON")
-    {
-      ac.setPowerfulSetting("ON");
-      playBeep(SET);
-      ac.update();
+      publishHpState();
     }
   }
   else if (strcmp(topic, ha_preset_mode_set_topic.c_str()) == 0)
   {
-    if (strcmp(message, "boost") == 0) {
-      ac.setPowerfulSetting("ON");
-    } else {
-      ac.setPowerfulSetting("OFF");
+    const char *newPowerful = (strcmp(message, "boost") == 0) ? "ON" : "OFF";
+    if (strcmp(newPowerful, ac.getPowerfulSetting()) != 0)
+    {
+      ac.setPowerfulSetting(newPowerful);
+      playBeep(SET);
+      ac.update();
+      publishHpState();
     }
-    playBeep(SET);
-    ac.update();
   }
    else if (strcmp(topic, ha_switch_remote_enable_set_topic.c_str()) == 0)
   {
