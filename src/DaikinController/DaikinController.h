@@ -60,6 +60,9 @@ struct HVACSettings
   const char *horizontalVane; // horizontal vane, left/right
   const char *powerful;
   const char *comfort;        // ceiling-airflow mode (protocol v2+ only)
+  const char *quiet;          // outdoor-quiet mode (protocol v2+ only)
+  const char *streamer;       // mold/odor discharge (protocol v2+ only)
+  const char *econo;          // outdoor power-cap (F7/D7)
   bool remoteEnable;
   // bool connected;
 };
@@ -149,6 +152,12 @@ public:
   void setPowerfulSetting(const char *setting);
   const char *getComfortSetting();
   void setComfortSetting(const char *setting);
+  const char *getQuietSetting();
+  void setQuietSetting(const char *setting);
+  const char *getStreamerSetting();
+  void setStreamerSetting(const char *setting);
+  const char *getEconoSetting();
+  void setEconoSetting(const char *setting);
   void setEnableRemote(bool enable);
   bool getDesiredRemoteEnable() { return newSettings.remoteEnable; }
   void setSyncInterval(uint32_t ms) { _syncIntervalMs = ms; }
@@ -173,7 +182,10 @@ public:
   // Comfort airflow uses F6/D6 bit 6 — only documented on protocol v2+ units.
   // Gated on protocol version >= 2 (set by G8 parser) so v0/v1 units don't get
   // a non-functional switch in HA.
-  bool supportsComfort() { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
+  bool supportsComfort()  { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
+  bool supportsQuiet()    { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
+  bool supportsStreamer() { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
+  bool supportsEcono()    { return !(s21SkipMask & (1ULL << S21_QUERY_F7)); };
   bool supportsVerticalSwing() { return _supportsVerticalSwing; };  // from F2 capability flags
   bool supportsHorizontalSwing() { return _supportsHorizontalSwing; }; // from F2 capability flags
   bool supportsEnergyMeter() { return !(s21SkipMask & (1ULL << S21_QUERY_FM)); };
@@ -211,8 +223,8 @@ private:
   HardwareSerial *_serial{nullptr};
 
   HVACStatus currentStatus{0, 0, 0, 0, 0, 0};
-  HVACSettings currentSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", true};
-  HVACSettings newSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", true};
+  HVACSettings currentSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", "OFF", "OFF", "OFF", true};
+  HVACSettings newSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", "OFF", "OFF", "OFF", true};
   DiagSensors _diag{};
 
   // Temporary setting value.
@@ -253,10 +265,6 @@ private:
   // protocol-v2-only features that we've only validated on v2 units.
   uint8_t _protocolVersion = 0;
 
-  // Shadow of last F6 byte 1. Some units set a sticky bit here (function unknown
-  // as of 2026-05-20; possibly streamer/mold-prevention/intelligent-eye). We
-  // preserve it on D6 writes so toggling powerful/comfort doesn't clobber it.
-  uint8_t _lastF6Byte1 = '0';
 
   // Runtime value-change detection for sensors that ACK but return bogus data.
   // Compressor freq: some v0 units always return 000 even when compressor is running.

@@ -76,6 +76,7 @@ enum
 // If the array is reordered, these defines must be updated to match.
 #define S21_QUERY_F2 1
 #define S21_QUERY_F6 5
+#define S21_QUERY_F7 6
 #define S21_QUERY_F8 7
 #define S21_QUERY_FC 11
 #define S21_QUERY_RD 19

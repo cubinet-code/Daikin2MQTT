@@ -64,6 +64,9 @@ const PROGMEM char* HA_counter = "mdi:counter";
 const PROGMEM char* HA_alert = "mdi:alert-circle";
 const PROGMEM char* HA_powerful = "mdi:wind-power";
 const PROGMEM char* HA_comfort = "mdi:air-conditioner";
+const PROGMEM char* HA_quiet = "mdi:volume-mute";
+const PROGMEM char* HA_streamer = "mdi:weather-windy";
+const PROGMEM char* HA_econo = "mdi:leaf";
 const PROGMEM char* HA_remote_off = "mdi:remote-off";
 
 
@@ -107,6 +110,9 @@ String ha_switch_unit_led_config_topic;
 String ha_switch_unit_beep_config_topic;
 String ha_switch_powerful_config_topic;
 String ha_switch_comfort_config_topic;
+String ha_switch_quiet_config_topic;
+String ha_switch_streamer_config_topic;
+String ha_switch_econo_config_topic;
 String ha_switch_remote_enable_config_topic;
 
 String ha_discovery_topic;
@@ -120,6 +126,9 @@ String ha_switch_unit_led_set_topic;
 String ha_switch_unit_beep_set_topic;
 String ha_switch_powerful_set_topic;
 String ha_switch_comfort_set_topic;
+String ha_switch_quiet_set_topic;
+String ha_switch_streamer_set_topic;
+String ha_switch_econo_set_topic;
 String ha_preset_mode_set_topic;
 String ha_switch_remote_enable_set_topic;
 String hvac_name;

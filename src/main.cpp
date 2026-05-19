@@ -1641,6 +1641,9 @@ void populateRootInfo(const HVACSettings &settings, const HVACStatus &status, bo
   rootInfo["mode"] = hpGetMode(settings);
   rootInfo["powerful"] = settings.powerful;
   rootInfo["comfort"] = settings.comfort;
+  rootInfo["quiet"] = settings.quiet;
+  rootInfo["streamer"] = settings.streamer;
+  rootInfo["econo"] = settings.econo;
 
   if (fullStatus) {
     rootInfo["roomTemperature"] = convertCelsiusToLocalUnit(status.roomTemperature + inside_temp_offset, useFahrenheit);
@@ -2082,6 +2085,30 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
       publishHpState();
     }
   }
+  else if (strcmp(topic, ha_switch_quiet_set_topic.c_str()) == 0)
+  {
+    String modeUpper = message; modeUpper.toUpperCase();
+    if ((modeUpper == "ON" || modeUpper == "OFF") && strcmp(modeUpper.c_str(), ac.getQuietSetting()) != 0) {
+      ac.setQuietSetting(modeUpper.c_str());
+      playBeep(SET); ac.update(); publishHpState();
+    }
+  }
+  else if (strcmp(topic, ha_switch_streamer_set_topic.c_str()) == 0)
+  {
+    String modeUpper = message; modeUpper.toUpperCase();
+    if ((modeUpper == "ON" || modeUpper == "OFF") && strcmp(modeUpper.c_str(), ac.getStreamerSetting()) != 0) {
+      ac.setStreamerSetting(modeUpper.c_str());
+      playBeep(SET); ac.update(); publishHpState();
+    }
+  }
+  else if (strcmp(topic, ha_switch_econo_set_topic.c_str()) == 0)
+  {
+    String modeUpper = message; modeUpper.toUpperCase();
+    if ((modeUpper == "ON" || modeUpper == "OFF") && strcmp(modeUpper.c_str(), ac.getEconoSetting()) != 0) {
+      ac.setEconoSetting(modeUpper.c_str());
+      playBeep(SET); ac.update(); publishHpState();
+    }
+  }
   else if (strcmp(topic, ha_preset_mode_set_topic.c_str()) == 0)
   {
     // HA presets are mutually exclusive; map them to the two switches so only one is ON.
@@ -2466,6 +2493,24 @@ void haConfig()
       F("{{ value_json.comfort if (value_json is defined and value_json.comfort is defined and value_json.comfort|length) else 'OFF' }}"),
       ha_switch_comfort_config_topic);
   }
+  if (proto == PROTOCOL_S21 && ac.supportsQuiet()){
+    publishMQTTSwitchConfig("Outdoor Quiet", "_quiet", HA_quiet,
+      ha_switch_quiet_set_topic, ha_state_topic,
+      F("{{ value_json.quiet if (value_json is defined and value_json.quiet is defined and value_json.quiet|length) else 'OFF' }}"),
+      ha_switch_quiet_config_topic);
+  }
+  if (proto == PROTOCOL_S21 && ac.supportsStreamer()){
+    publishMQTTSwitchConfig("Streamer", "_streamer", HA_streamer,
+      ha_switch_streamer_set_topic, ha_state_topic,
+      F("{{ value_json.streamer if (value_json is defined and value_json.streamer is defined and value_json.streamer|length) else 'OFF' }}"),
+      ha_switch_streamer_config_topic);
+  }
+  if (proto == PROTOCOL_S21 && ac.supportsEcono()){
+    publishMQTTSwitchConfig("Econo", "_econo", HA_econo,
+      ha_switch_econo_set_topic, ha_state_topic,
+      F("{{ value_json.econo if (value_json is defined and value_json.econo is defined and value_json.econo|length) else 'OFF' }}"),
+      ha_switch_econo_config_topic);
+  }
 
   // Decoded protocol-v2 telemetry from RK/Rb (no v0 fallback — won't appear if FK absent).
   if (proto == PROTOCOL_S21 && others_haa) {
@@ -2552,6 +2597,9 @@ void mqttConnect()
       mqtt_client.subscribe(ha_switch_unit_beep_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_powerful_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_comfort_set_topic.c_str());
+      mqtt_client.subscribe(ha_switch_quiet_set_topic.c_str());
+      mqtt_client.subscribe(ha_switch_streamer_set_topic.c_str());
+      mqtt_client.subscribe(ha_switch_econo_set_topic.c_str());
       mqtt_client.subscribe(ha_preset_mode_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_remote_enable_set_topic.c_str());
       mqtt_client.publish(ha_availability_topic.c_str(), !_debugMode ? mqtt_payload_available : mqtt_payload_unavailable, true); // publish status as available
@@ -2954,6 +3002,9 @@ void setup()
       ha_switch_unit_beep_set_topic = mqtt_topic + "/" + mqtt_fn + "/beep/set";
       ha_switch_powerful_set_topic = mqtt_topic + "/" + mqtt_fn + "/powerful/set";
       ha_switch_comfort_set_topic = mqtt_topic + "/" + mqtt_fn + "/comfort/set";
+      ha_switch_quiet_set_topic = mqtt_topic + "/" + mqtt_fn + "/quiet/set";
+      ha_switch_streamer_set_topic = mqtt_topic + "/" + mqtt_fn + "/streamer/set";
+      ha_switch_econo_set_topic = mqtt_topic + "/" + mqtt_fn + "/econo/set";
       ha_preset_mode_set_topic = mqtt_topic + "/" + mqtt_fn + "/preset/set";
       ha_switch_remote_enable_set_topic =  mqtt_topic + "/" + mqtt_fn + "/remote_enable/set";
 
@@ -2978,6 +3029,9 @@ void setup()
         ha_switch_unit_beep_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/beep/config";
         ha_switch_powerful_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/powerful/config";
         ha_switch_comfort_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/comfort/config";
+        ha_switch_quiet_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/quiet/config";
+        ha_switch_streamer_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/streamer/config";
+        ha_switch_econo_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/econo/config";
         ha_switch_remote_enable_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/remote_enable/config";
       }
       // startup mqtt connection

@@ -53,13 +53,22 @@ const char *HORIZONTALVANE_MAP[2] = {"hold", "swing"};
 const byte S21_POWERFUL[2] = {0x00, 0x02};
 const char *S21_POWERFUL_MAP[2] = {"OFF", "ON"};
 
-// Comfort airflow ("ceiling angle") — protocol v2+ only.
-// F6 byte 0 bit 6 (mask 0x40) signals the flag; D6 byte 0 same bit toggles it.
-// When ON, the AC redirects vertical louver upward (cool mode) to avoid direct
-// airflow on occupants; turning it OFF restores the user's louver setting.
-// Verified on FTKD-zv2s (7B91) via MQTT probe + 4 sample snapshots + 3 D6 writes.
-const byte S21_COMFORT[2] = {0x00, 0x40};
-const char *S21_COMFORT_MAP[2] = {"OFF", "ON"};
+// F6/D6 special-mode bit layout (FTKD-zv2s v2 — verified by remote-button probe):
+//   byte 0 bit 1 (0x02): powerful  (legacy v0/v1 indicator — RzB2 authoritative on v2)
+//   byte 0 bit 6 (0x40): comfort   (redirects vertical louver toward ceiling)
+//   byte 0 bit 7 (0x80): quiet     (outdoor unit quiet mode — slower compressor)
+//   byte 1 bit 7 (0x80): streamer  (mold/odor prevention discharge)
+const byte S21_COMFORT[2]  = {0x00, 0x40};
+const char *S21_COMFORT_MAP[2]  = {"OFF", "ON"};
+const byte S21_QUIET[2]    = {0x00, 0x80};
+const char *S21_QUIET_MAP[2]    = {"OFF", "ON"};
+const byte S21_STREAMER[2] = {0x00, 0x80};
+const char *S21_STREAMER_MAP[2] = {"OFF", "ON"};
+
+// F7/D7 econo mode — outdoor-unit power cap.
+//   byte 1 bit 1 (0x02): econo
+const byte S21_ECONO[2]   = {0x00, 0x02};
+const char *S21_ECONO_MAP[2]   = {"OFF", "ON"};
 
 int16_t bytes_to_num(uint8_t *bytes, size_t len)
 {
@@ -420,25 +429,24 @@ bool DaikinController::parseResponse(ACResponse *response)
           syncNewSettings();
         return true;
 
-      case '6': // F6 -> G6 -- Powerful/comfort/quiet/streamer
-        // Byte 0 layout (validated on FTKD-zv2s v2):
-        //   bit 1 (0x02) = powerful (legacy v0/v1 encoding — preserved for compat)
-        //   bit 6 (0x40) = comfort airflow (v2+; redirects louver toward ceiling)
-        // Powerful is also reported via RzB2 on v2 units, which takes priority below.
+      case '6': // F6 -> G6 -- Powerful / comfort / quiet / streamer
+        // Byte layout (validated on FTKD-zv2s v2 via remote-button probe rounds):
+        //   byte 0 bit 1 (0x02) = powerful (legacy v0/v1; RzB2 authoritative on v2)
+        //   byte 0 bit 6 (0x40) = comfort airflow (redirects louver to ceiling)
+        //   byte 0 bit 7 (0x80) = quiet (outdoor unit quiet mode)
+        //   byte 1 bit 7 (0x80) = streamer (mold/odor prevention discharge)
         this->currentSettings.powerful = (payload[0] & 0x02) ? S21_POWERFUL_MAP[1] : S21_POWERFUL_MAP[0];
         this->currentSettings.comfort  = (payload[0] & 0x40) ? S21_COMFORT_MAP[1]  : S21_COMFORT_MAP[0];
-        // Shadow byte 1 — unknown sticky flag we round-trip on D6 to avoid clobbering it.
-        if (payloadSize > 1) _lastF6Byte1 = payload[1];
+        this->currentSettings.quiet    = (payload[0] & 0x80) ? S21_QUIET_MAP[1]    : S21_QUIET_MAP[0];
+        if (payloadSize > 1)
+          this->currentSettings.streamer = (payload[1] & 0x80) ? S21_STREAMER_MAP[1] : S21_STREAMER_MAP[0];
         return true;
 
 
-      case '7': // F7 -> G7 -- Demand + econo mode
+      case '7': // F7 -> G7 -- Demand control + econo
       {
-        int demand = (payloadSize > 0) ? (payload[0] - '0') : -1;
-        bool econo = (payloadSize > 1) ? (payload[1] & 0x02) : false;
-        Log.ln(TAG, "G7 Demand=%d Econo=%d (raw: %02X %02X %02X %02X)", demand, econo,
-          payloadSize > 0 ? payload[0] : 0, payloadSize > 1 ? payload[1] : 0,
-          payloadSize > 2 ? payload[2] : 0, payloadSize > 3 ? payload[3] : 0);
+        if (payloadSize > 1)
+          this->currentSettings.econo = (payload[1] & 0x02) ? S21_ECONO_MAP[1] : S21_ECONO_MAP[0];
         return true;
       }
 
@@ -902,26 +910,29 @@ bool DaikinController::update(bool updateAll)
       pendingSettings.vane = false;
     }
     
-    // Special modes (D6): byte 0 carries powerful (bit 1) + comfort (bit 6) flags,
-    // byte 1 is a sticky unknown flag we round-trip from the last F6 read so we
-    // don't accidentally clear it. If F6 was NAK'd (v0-style unit), fall back to
-    // D3 byte 3 for powerful only; comfort is v2+ and silently dropped on D3 path.
+    // Special modes — three commands packed in this block:
+    //   D6 byte 0: powerful (bit 1) + comfort (bit 6) + quiet (bit 7)
+    //   D6 byte 1: streamer (bit 7)
+    //   D7 byte 1: econo (bit 1)
+    // If F6/F7 was NAK'd (v0-style unit), fall back to D3 for powerful only.
     // See: https://github.com/revk/ESP32-Faikout/issues/817
     if (pendingSettings.specialMode || updateAll)
     {
       bool sent = false;
-      if (!(s21SkipMask & (1ULL << S21_QUERY_F6))) { // try D6
+      if (!(s21SkipMask & (1ULL << S21_QUERY_F6))) {
         uint8_t b0 = '0'
           + S21_POWERFUL[lookupByteMapIndex(S21_POWERFUL_MAP, 2, newSettings.powerful)]
-          + S21_COMFORT[lookupByteMapIndex(S21_COMFORT_MAP, 2, newSettings.comfort)];
+          + S21_COMFORT [lookupByteMapIndex(S21_COMFORT_MAP,  2, newSettings.comfort)]
+          + S21_QUIET   [lookupByteMapIndex(S21_QUIET_MAP,    2, newSettings.quiet)];
+        uint8_t b1 = '0' + S21_STREAMER[lookupByteMapIndex(S21_STREAMER_MAP, 2, newSettings.streamer)];
         payload[0] = b0;
-        payload[1] = _lastF6Byte1;  // preserve sticky byte-1 flag
+        payload[1] = b1;
         payload[2] = '0';
         payload[3] = '0';
         sent = daikinUART->sendCommandS21('D', '6', payload, 4);
         if (!sent) Log.ln(TAG, "D6 failed, will try D3 fallback");
       }
-      if (!sent) { // F6 NAK'd or D6 failed → try D3 (powerful in byte 3, comfort unsupported)
+      if (!sent) { // F6 NAK'd → D3 fallback (powerful only; comfort/quiet/streamer unsupported)
         payload[0] = '0';
         payload[1] = '0';
         payload[2] = '0';
@@ -929,9 +940,22 @@ bool DaikinController::update(bool updateAll)
         sent = daikinUART->sendCommandS21('D', '3', payload, 4);
         if (!sent) Log.ln(TAG, "D3 fallback also failed — powerful mode not supported");
       }
+
+      // D7: econo (independent of D6/D3 path)
+      if (!(s21SkipMask & (1ULL << S21_QUERY_F7))) {
+        uint8_t d7p[4] = {'0',
+          (uint8_t)('0' + S21_ECONO[lookupByteMapIndex(S21_ECONO_MAP, 2, newSettings.econo)]),
+          '0', '0'};
+        bool d7ok = daikinUART->sendCommandS21('D', '7', d7p, 4);
+        if (d7ok) currentSettings.econo = newSettings.econo;
+        sent = sent & d7ok;
+      }
+
       if (sent) {
-        currentSettings.powerful = newSettings.powerful;  // mirror so state echo is immediate
+        currentSettings.powerful = newSettings.powerful;
         currentSettings.comfort  = newSettings.comfort;
+        currentSettings.quiet    = newSettings.quiet;
+        currentSettings.streamer = newSettings.streamer;
       }
       res = res & sent;
       pendingSettings.specialMode = false;
@@ -1177,6 +1201,26 @@ const char *DaikinController::getComfortSetting(){
 void DaikinController::setComfortSetting(const char *setting){
   if (daikinUART->currentProtocol() == PROTOCOL_S21) {
     if (assignMapped(newSettings.comfort, S21_COMFORT_MAP, 2, setting)) pendingSettings.specialMode = true;
+  }
+}
+
+const char *DaikinController::getQuietSetting()   { return currentSettings.quiet; }
+const char *DaikinController::getStreamerSetting(){ return currentSettings.streamer; }
+const char *DaikinController::getEconoSetting()   { return currentSettings.econo; }
+
+void DaikinController::setQuietSetting(const char *setting){
+  if (daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (assignMapped(newSettings.quiet, S21_QUIET_MAP, 2, setting)) pendingSettings.specialMode = true;
+  }
+}
+void DaikinController::setStreamerSetting(const char *setting){
+  if (daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (assignMapped(newSettings.streamer, S21_STREAMER_MAP, 2, setting)) pendingSettings.specialMode = true;
+  }
+}
+void DaikinController::setEconoSetting(const char *setting){
+  if (daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (assignMapped(newSettings.econo, S21_ECONO_MAP, 2, setting)) pendingSettings.specialMode = true;
   }
 }
 
