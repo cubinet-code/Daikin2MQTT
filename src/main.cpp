@@ -2300,36 +2300,30 @@ void haConfig()
   haClimateConfig["power_command_topic"] = ha_power_set_topic;
   haClimateConfig["temperature_unit"] = useFahrenheit ? "F" : "C";
 
+  // Fan modes: 3-speed → low/medium/high = 1/2/3, no Quiet.
+  // 5-speed → low/medium/high = 1/3/5, plus raw "2" and "4" in between, plus Quiet on S21.
+  // Raw "2"/"4" have no built-in HA icon (rendered as plain text); the canonical
+  // labels (low/medium/high/Quiet/auto) get HA's standard icons.
   JsonArray haConfigFan_modes = haClimateConfig["fan_modes"].to<JsonArray>();
-  if (proto == PROTOCOL_S21)
-  {
-    haConfigFan_modes.add("auto");
+  haConfigFan_modes.add("auto");
+  if (proto == PROTOCOL_S21 && fan_speed_levels >= 5) {
     haConfigFan_modes.add("Quiet");
-    haConfigFan_modes.add("low");
-    haConfigFan_modes.add("medium");
-    haConfigFan_modes.add("high");
-    if (fan_speed_levels >= 5) {
-      haConfigFan_modes.add("4");
-      haConfigFan_modes.add("5");
-    }
-  }else if (proto == PROTOCOL_X50)
-  {
-    haConfigFan_modes.add("auto");
-    haConfigFan_modes.add("low");
-    haConfigFan_modes.add("medium");
-    haConfigFan_modes.add("high");
-    if (fan_speed_levels >= 5) {
-      haConfigFan_modes.add("4");
-      haConfigFan_modes.add("5");
-    }
   }
+  haConfigFan_modes.add("low");
+  if (fan_speed_levels >= 5) haConfigFan_modes.add("2");
+  haConfigFan_modes.add("medium");
+  if (fan_speed_levels >= 5) haConfigFan_modes.add("4");
+  haConfigFan_modes.add("high");
 
   haClimateConfig["fan_mode_command_topic"] = ha_fan_set_topic;
-  // Map HA display names back to internal S21 values
-  haClimateConfig["fan_mode_command_template"] = F("{% set map = {'Quiet':'quiet','low':'1','medium':'2','high':'3'} %}{{ map.get(value, value) }}");
   haClimateConfig["fan_mode_state_topic"] = ha_state_topic;
-  // Map internal S21 values to HA display names
-  haClimateConfig["fan_mode_state_template"] = F("{% set map = {'quiet':'Quiet','1':'low','2':'medium','3':'high'} %}{% set f = value_json.fan if (value_json is defined and value_json.fan is defined) else 'auto' %}{{ map.get(f, f) }}");
+  if (fan_speed_levels >= 5) {
+    haClimateConfig["fan_mode_command_template"] = F("{% set map = {'Quiet':'quiet','low':'1','medium':'3','high':'5'} %}{{ map.get(value, value) }}");
+    haClimateConfig["fan_mode_state_template"]   = F("{% set map = {'quiet':'Quiet','1':'low','3':'medium','5':'high'} %}{% set f = value_json.fan if (value_json is defined and value_json.fan is defined) else 'auto' %}{{ map.get(f, f) }}");
+  } else {
+    haClimateConfig["fan_mode_command_template"] = F("{% set map = {'low':'1','medium':'2','high':'3'} %}{{ map.get(value, value) }}");
+    haClimateConfig["fan_mode_state_template"]   = F("{% set map = {'1':'low','2':'medium','3':'high'} %}{% set f = value_json.fan if (value_json is defined and value_json.fan is defined) else 'auto' %}{{ map.get(f, f) }}");
+  }
 
   //Vertical Swing — only if unit supports it (detected via F2)
   if (ac.supportsVerticalSwing()) {
