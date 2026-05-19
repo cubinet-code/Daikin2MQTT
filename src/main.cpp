@@ -1839,41 +1839,42 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   {
     String modeUpper = message;
     modeUpper.toUpperCase();
-    bool valid = true;
+
     if (modeUpper == "OFF")
     {
       playBeep(OFF);
       ac.setPowerSetting("OFF");
+      ac.update();
+      publishHpState();
     }
     else
     {
-      // Translate HA HVAC mode names to S21 mode tokens.
-      if      (modeUpper == "HEAT_COOL") modeUpper = "AUTO";
-      else if (modeUpper == "FAN_ONLY")  modeUpper = "FAN";
-      else if (modeUpper != "HEAT" && modeUpper != "COOL" && modeUpper != "DRY" && modeUpper != "AUTO")
-        valid = false; // unknown mode — ignore
-      if (valid)
+      // Translate HA HVAC mode names to S21 mode tokens; nullptr = unknown → ignore.
+      const char *s21Mode =
+          modeUpper == "HEAT_COOL" ? "AUTO" :
+          modeUpper == "FAN_ONLY"  ? "FAN"  :
+          (modeUpper == "HEAT" || modeUpper == "COOL" || modeUpper == "DRY" || modeUpper == "AUTO")
+              ? modeUpper.c_str() : nullptr;
+      if (s21Mode != nullptr)
       {
         playBeep(ON);
         ac.setPowerSetting("ON");
-        ac.setModeSetting(modeUpper.c_str());
+        ac.setModeSetting(s21Mode);
+        ac.update();
+        publishHpState();
       }
-    }
-    if (valid)
-    {
-      ac.update();
-      publishHpState();
     }
   }
   else if (strcmp(topic, ha_temp_set_topic.c_str()) == 0)
   {
-    float temperature = strtof(message, NULL);
-    float temperature_c = convertLocalUnitToCelsius(temperature, useFahrenheit);
-    if (temperature_c < min_temp || temperature_c > max_temp) temperature_c = 23;
-    playBeep(SET);
-    ac.setTemperature(temperature_c);
-    ac.update();
-    publishHpState();
+    float temperature_c = convertLocalUnitToCelsius(strtof(message, NULL), useFahrenheit);
+    if (temperature_c >= min_temp && temperature_c <= max_temp)
+    {
+      playBeep(SET);
+      ac.setTemperature(temperature_c);
+      ac.update();
+      publishHpState();
+    }
   }
   else if (strcmp(topic, ha_fan_set_topic.c_str()) == 0)
   {

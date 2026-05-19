@@ -919,34 +919,32 @@ void DaikinController::togglePower()
   }
 }
 
+// Map an incoming string to a slot in `map` and assign it to `field` if valid and changed.
+// Returns true when the field was actually updated (caller should mark its dirty bit then).
+// Rejects unknown values rather than silently falling back to map[0] — that fallback was a
+// footgun where a typo (e.g. "medium" when "3" was expected) would silently nuke state to
+// whatever map[0] is (typically "auto"/"OFF").
+static bool assignMapped(const char *&field, const char *const map[], int mapLen, const char *value)
+{
+  for (int i = 0; i < mapLen; i++)
+  {
+    if (strcasecmp(map[i], value) == 0)
+    {
+      if (field == map[i]) return false;
+      field = map[i];
+      return true;
+    }
+  }
+  Log.ln(TAG, "Unknown setting value '%s' — rejected", value);
+  return false;
+}
+
 void DaikinController::setPowerSetting(const char *setting)
 {
-  if (daikinUART->currentProtocol() == PROTOCOL_S21)
-  {
-
-    int index = lookupByteMapIndex(S21_POWER_MAP, 2, setting);
-    if (index > -1)
-    {
-      newSettings.power = S21_POWER_MAP[index];
-    }
-    else
-    {
-      newSettings.power = S21_POWER_MAP[0];
-    }
-    pendingSettings.basic = true;
-  }
-  else if (daikinUART->currentProtocol() == PROTOCOL_X50)
-  {
-    int index = lookupByteMapIndex(X50_POWER_MAP, 2, setting);
-    if (index > -1)
-    {
-      newSettings.power = X50_POWER_MAP[index];
-    }
-    else
-    {
-      newSettings.power = X50_POWER_MAP[0];
-    }
-    pendingSettings.basic = true;
+  if (daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (assignMapped(newSettings.power, S21_POWER_MAP, 2, setting)) pendingSettings.basic = true;
+  } else if (daikinUART->currentProtocol() == PROTOCOL_X50) {
+    if (assignMapped(newSettings.power, X50_POWER_MAP, 2, setting)) pendingSettings.basic = true;
   }
 }
 
@@ -975,31 +973,10 @@ const char *DaikinController::getModeSetting()
 
 void DaikinController::setModeSetting(const char *setting)
 {
-  if (daikinUART->currentProtocol()== PROTOCOL_S21)
-  {
-    int index = lookupByteMapIndex(S21_MODE_MAP, 7, setting);
-    if (index > -1)
-    {
-      newSettings.mode = S21_MODE_MAP[index];
-    }
-    else
-    {
-      newSettings.mode = S21_MODE_MAP[0];
-    }
-    pendingSettings.basic = true;
-  }
-  else if (daikinUART->currentProtocol() == PROTOCOL_X50)
-  {
-    int index = lookupByteMapIndex(X50_MODE_MAP, 8, setting);
-    if (index > -1)
-    {
-      newSettings.mode = X50_MODE_MAP[index];
-    }
-    else
-    {
-      newSettings.mode = X50_MODE_MAP[0];
-    }
-    pendingSettings.basic = true;
+  if (daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (assignMapped(newSettings.mode, S21_MODE_MAP, 7, setting)) pendingSettings.basic = true;
+  } else if (daikinUART->currentProtocol() == PROTOCOL_X50) {
+    if (assignMapped(newSettings.mode, X50_MODE_MAP, 8, setting)) pendingSettings.basic = true;
   }
 }
 
@@ -1009,6 +986,7 @@ float DaikinController::getTemperature()
 }
 void DaikinController::setTemperature(float setting)
 {
+  if (newSettings.temperature == setting) return;
   newSettings.temperature = setting;
   pendingSettings.basic = true;
 }
@@ -1019,31 +997,10 @@ const char *DaikinController::getFanSpeed()
 }
 void DaikinController::setFanSpeed(const char *setting)
 {
-  if (daikinUART->currentProtocol()== PROTOCOL_S21)
-  {
-    int index = lookupByteMapIndex(S21_FAN_MAP, 7, setting);
-    if (index > -1)
-    {
-      newSettings.fan = S21_FAN_MAP[index];
-    }
-    else
-    {
-      newSettings.fan = S21_FAN_MAP[0];
-    }
-    pendingSettings.basic = true;
-  }
-  else if (daikinUART->currentProtocol() == PROTOCOL_X50)
-  {
-    int index = lookupByteMapIndex(X50_FAN_MAP, 7, setting);
-    if (index > -1)
-    {
-      newSettings.fan = X50_FAN_MAP[index];
-    }
-    else
-    {
-      newSettings.fan = X50_FAN_MAP[0];
-    }
-    pendingSettings.basic = true;
+  if (daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (assignMapped(newSettings.fan, S21_FAN_MAP, 7, setting)) pendingSettings.basic = true;
+  } else if (daikinUART->currentProtocol() == PROTOCOL_X50) {
+    if (assignMapped(newSettings.fan, X50_FAN_MAP, 7, setting)) pendingSettings.basic = true;
   }
 }
 
@@ -1053,31 +1010,11 @@ const char *DaikinController::getVerticalVaneSetting()
 }
 void DaikinController::setVerticalVaneSetting(const char *setting)
 {
-  if (daikinUART->currentProtocol()== PROTOCOL_S21)
-  {
-    int index = lookupByteMapIndex(VERTICALVANE_MAP, 2, setting);
-    if (index > -1)
-    {
-      newSettings.verticalVane = VERTICALVANE_MAP[index];
-    }
-    else
-    {
-      newSettings.verticalVane = VERTICALVANE_MAP[0];
-    }
-    pendingSettings.vane = true;
-  }  else if (daikinUART->currentProtocol() == PROTOCOL_X50){
-    int index = lookupByteMapIndex(X50_VERTICALVANE_MAP, 7, setting);
-    if (index > -1)
-    {
-      newSettings.verticalVane = X50_VERTICALVANE_MAP[index];
-    }
-    else
-    {
-      newSettings.verticalVane = X50_VERTICALVANE_MAP[0];
-    }
-    pendingSettings.basic = true;
+  if (daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (assignMapped(newSettings.verticalVane, VERTICALVANE_MAP, 2, setting)) pendingSettings.vane = true;
+  } else if (daikinUART->currentProtocol() == PROTOCOL_X50) {
+    if (assignMapped(newSettings.verticalVane, X50_VERTICALVANE_MAP, 7, setting)) pendingSettings.basic = true;
   }
-
 }
 
 const char *DaikinController::getHorizontalVaneSetting()
@@ -1086,21 +1023,10 @@ const char *DaikinController::getHorizontalVaneSetting()
 }
 void DaikinController::setHorizontalVaneSetting(const char *setting)
 {
-  if (daikinUART->currentProtocol() == PROTOCOL_S21)
-  {
-    int index = lookupByteMapIndex(HORIZONTALVANE_MAP, 2, setting);
-    if (index > -1)
-    {
-      newSettings.horizontalVane = HORIZONTALVANE_MAP[index];
-    }
-    else
-    {
-      newSettings.horizontalVane = HORIZONTALVANE_MAP[0];
-    }
-    pendingSettings.vane = true;
-  }else if (daikinUART->currentProtocol() == PROTOCOL_X50){
-    //NOT SUPPORT
+  if (daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (assignMapped(newSettings.horizontalVane, HORIZONTALVANE_MAP, 2, setting)) pendingSettings.vane = true;
   }
+  // X50 does not support horizontal vane control.
 }
 
 void DaikinController::setSettingsChangedCallback(SETTINGS_CHANGED_CALLBACK_SIGNATURE)
@@ -1123,18 +1049,8 @@ const char *DaikinController::getPowerfulSetting(){
 }
 
 void DaikinController::setPowerfulSetting(const char *setting){
-  if (daikinUART->currentProtocol()== PROTOCOL_S21)
-  {
-    int index = lookupByteMapIndex(S21_POWERFUL_MAP, 2, setting);
-    if (index > -1)
-    {
-      newSettings.powerful = S21_POWERFUL_MAP[index];
-    }
-    else
-    {
-      newSettings.powerful = S21_POWERFUL_MAP[0];
-    }
-    pendingSettings.specialMode = true;
+  if (daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (assignMapped(newSettings.powerful, S21_POWERFUL_MAP, 2, setting)) pendingSettings.specialMode = true;
   }
 }
 
@@ -1142,6 +1058,7 @@ void DaikinController::setPowerfulSetting(const char *setting){
 // Protocol-agnostic: stages the change; the actual D2 send in update() is gated to S21.
 // Callable before connect() (boot path) since it doesn't depend on protocol detection.
 void DaikinController::setEnableRemote(bool isEnable){
+  if (newSettings.remoteEnable == isEnable) return;
   newSettings.remoteEnable = isEnable;
   pendingSettings.ACconfig = true;
 }
