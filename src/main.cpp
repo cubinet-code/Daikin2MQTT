@@ -1933,75 +1933,71 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
       mqtt_client.publish(ha_debug_topic.c_str(), (char *)("Debug mode disabled"));
     }
   }
+  // Phase 1 probe: each handler publishes a plain-text response line
+  //   '<cmd> <status> <hex-bytes>'
+  // where <status> is OK | NAK | TIMEOUT and <hex-bytes> is the response payload
+  // (framing/CRC stripped, ACK-only writes report empty hex).
+  // Format kept grep-friendly so mosquitto_sub | grep '^F1 OK' works directly.
   else if (strcmp(topic, ha_custom_packet_s21.c_str()) == 0 && (ac.daikinUART->currentProtocol() == PROTOCOL_S21))
-  { // send custom packet for advance user
-    // topic: .../<hostname>/send/s2a
-    // payload: 44 32 32 30 30 30  (command: D2, payload: 32 30 30 30)
+  { // .../send/s21 — payload: '44 32 32 30 30 30' (D2 + payload 32 30 30 30)
     String custom = message;
-
-    // copy custom packet to char array
-    char buffer[(custom.length() + 1)]; // +1 for the NULL at the end
+    char buffer[(custom.length() + 1)];
     custom.toCharArray(buffer, (custom.length() + 1));
 
-    byte bytes[20]; // max custom packet bytes is 20
+    byte bytes[20];
     int byteCount = 0;
-    char *nextByte;
-
-    // loop over the byte string, breaking it up by spaces (or at the end of the line - \n)
-    nextByte = strtok(buffer, " ");
-    while (nextByte != NULL && byteCount < 20)
+    for (char *nextByte = strtok(buffer, " "); nextByte != NULL && byteCount < 20; nextByte = strtok(NULL, " "))
     {
-      bytes[byteCount] = strtol(nextByte, NULL, 16); // convert from hex string
-      nextByte = strtok(NULL, "   ");
-      byteCount++;
+      bytes[byteCount++] = strtol(nextByte, NULL, 16);
     }
 
-    Log.ln(TAG, "Send custom packet");
-    playBeep(SET);
     bool res = false;
-    if (byteCount == 2)
-    {
+    if (byteCount == 2) {
       res = ac.daikinUART->sendCommandS21(bytes[0], bytes[1]);
-    }
-    else if (byteCount > 2)
-    {
+    } else if (byteCount > 2) {
       res = ac.daikinUART->sendCommandS21(bytes[0], bytes[1], &bytes[2], byteCount - 2);
     }
-    Log.ln(TAG, "Get response from  custom packet ");
-    Log.ln(TAG, String(ac.daikinUART->getResponse().cmd1));
-    Log.ln(TAG, String(ac.daikinUART->getResponse().cmd2));
-    Log.ln(TAG, String(getHEXformatted(ac.daikinUART->getResponse().data, ac.daikinUART->getResponse().dataSize)));
+
+    String cmdStr = byteCount >= 2 ? (String((char)bytes[0]) + String((char)bytes[1])) : String("??");
+    String status = res ? "OK" : (ac.daikinUART->lastResultWasNAK() ? "NAK" : "TIMEOUT");
+    String hex;
+    if (res) {
+      ACResponse r = ac.daikinUART->getResponse();
+      // F-replies: [STX, cmd1+1, cmd2, payload..., CRC, ETX] → payload at data+3, length dataSize-5.
+      // D-replies (ACK-only): dataSize == 0 → empty hex.
+      if (r.dataSize >= 5) {
+        hex = getHEXformatted((uint8_t *)r.data + 3, r.dataSize - 5);
+      }
+    }
+    String line = cmdStr + " " + status + (hex.length() ? " " + hex : "");
+    Log.ln(TAG, "S21 probe: %s", line.c_str());
+    mqtt_client.publish(ha_recv_s21.c_str(), line.c_str());
   }
   else if (strcmp(topic, ha_custom_query_experimental.c_str()) == 0)
-  {
+  { // .../send/s21exp — payload: 'F1 FN FP' (space- or comma-separated 2-char commands)
     String command[32];
     uint8_t commandCount = 0;
-    char *nextByte;
-    nextByte = strtok(message, " ,");
-
-    while (nextByte != NULL && commandCount < 32)
+    for (char *nextByte = strtok(message, " ,"); nextByte != NULL && commandCount < 32; nextByte = strtok(NULL, " ,"))
     {
-      command[commandCount] = nextByte;
-      nextByte = strtok(NULL, " ,");
-      commandCount++;
+      command[commandCount++] = nextByte;
     }
-    String commandRes;
 
     for (int i = 0; i < commandCount; i++)
     {
-      bool resOK = ac.daikinUART->sendCommandS21(command[i][0], command[i][1]);
-      if (resOK)
-      {
-        uint8_t dataTruncated[256];
-        memcpy(dataTruncated, ac.daikinUART->getResponse().data + 3, ac.daikinUART->getResponse().dataSize - 5);
-        commandRes += "CMD: " + command[i] + " Res: " + getHEXformatted(dataTruncated, ac.daikinUART->getResponse().dataSize - 5) + "\n";
+      if (command[i].length() < 2) continue;
+      bool res = ac.daikinUART->sendCommandS21(command[i][0], command[i][1]);
+      String status = res ? "OK" : (ac.daikinUART->lastResultWasNAK() ? "NAK" : "TIMEOUT");
+      String hex;
+      if (res) {
+        ACResponse r = ac.daikinUART->getResponse();
+        if (r.dataSize >= 5) {
+          hex = getHEXformatted((uint8_t *)r.data + 3, r.dataSize - 5);
+        }
       }
-      else
-      {
-        commandRes += "CMD: " + command[i] + " Res: N/A\n";
-      }
+      String line = command[i].substring(0, 2) + " " + status + (hex.length() ? " " + hex : "");
+      Log.ln(TAG, "S21 probe: %s", line.c_str());
+      mqtt_client.publish(ha_recv_s21exp.c_str(), line.c_str());
     }
-    Log.ln(TAG, commandRes);
   }
 
   else if (strcmp(topic, ha_serial_send_topic.c_str()) == 0)
@@ -2866,6 +2862,8 @@ void setup()
       ha_debug_set_topic = mqtt_topic + "/" + mqtt_fn + "/debug/set";
       ha_custom_packet_s21 = mqtt_topic + "/" + mqtt_fn + "/send/s21";
       ha_custom_query_experimental = mqtt_topic + "/" + mqtt_fn + "/send/s21exp";
+      ha_recv_s21 = mqtt_topic + "/" + mqtt_fn + "/recv/s21";
+      ha_recv_s21exp = mqtt_topic + "/" + mqtt_fn + "/recv/s21exp";
       ha_availability_topic = mqtt_topic + "/" + mqtt_fn + "/availability";
       ha_switch_unit_led_set_topic = mqtt_topic + "/" + mqtt_fn + "/led/set";
       ha_switch_unit_beep_set_topic = mqtt_topic + "/" + mqtt_fn + "/beep/set";
