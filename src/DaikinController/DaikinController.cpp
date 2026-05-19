@@ -598,7 +598,11 @@ bool DaikinController::parseResponse(ACResponse *response)
         }
         return true;
       }
-      case 'e': // Re -> Se -- Humidity (relative %, only on units with humidity sensor)
+      case 'e': // Re -> Se -- Humidity setpoint (NOT measurement)
+      // On FTKD-zv2s this returns a constant 50 while real room humidity varies
+      // 49-61% per an external sensor. Hypothesis: Re reflects the target value
+      // used by the remote's Humidity-control mode. The actual humidity sensor
+      // command on this unit is still unidentified.
       {
         this->currentStatus.humidity = bytes_to_num(&payload[0], payloadSize);
         return true;
@@ -625,17 +629,17 @@ bool DaikinController::parseResponse(ACResponse *response)
         }
         return false;
 
-      case 'K': // RK -> SK -- Target fan RPM × 10 (outdoor unit command frequency)
+      case 'K': // RK -> SK -- Indoor fan target RPM × 10
+      // Validated 2026-05-20 on FTKD-zv2s: fan=1 -> RK=720, fan=5 -> RK=1050.
+      // Tracks the indoor fan setpoint, ~10 RPM ahead of measured RL.
       {
-        int targetRpm = bytes_to_num(&payload[0], payloadSize) * 10;
-        this->currentStatus.targetFanRPM = targetRpm;
+        this->currentStatus.targetFanRPM = bytes_to_num(&payload[0], payloadSize) * 10;
         return true;
       }
 
-      case 'b': // Rb -> Sb -- Indoor "load signal" (ΔD frequency demand to ODU)
+      case 'b': // Rb -> Sb -- Compressor load signal (per Faikout; semantics not yet user-validated)
       {
-        int loadSig = bytes_to_num(&payload[0], payloadSize);
-        this->currentStatus.loadSignal = loadSig;
+        this->currentStatus.loadSignal = bytes_to_num(&payload[0], payloadSize);
         return true;
       }
 

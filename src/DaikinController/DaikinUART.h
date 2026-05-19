@@ -131,8 +131,8 @@ const char* const S21queryCmds[] = {
   "FL",         // 32 - Unknown 2-byte cmd, observed constant "0000"
   "FR",         // 33 - Unknown 2-byte cmd, observed "?O00"
   "FV",         // 34 - Unknown 2-byte cmd, contains binary 0x83 byte
-  "RK",         // 35 - Outdoor unit target fan RPM × 10 (Faikout)
-  "Rb",         // 36 - Indoor→outdoor ΔD load signal (Faikout)
+  "RK",         // 35 - Indoor fan target RPM × 10 (validated: tracks fan setting)
+  "Rb",         // 36 - Compressor load signal × 100? (per Faikout; not yet user-validated)
   "RW",         // 37 - Unknown (observed constant "00" while wideVane=swing — investigating)
   };
 

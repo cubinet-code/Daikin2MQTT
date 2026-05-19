@@ -1662,7 +1662,7 @@ void populateRootInfo(const HVACSettings &settings, const HVACStatus &status, bo
     rootInfo["offTimerMinutes"] = status.offTimerMinutes;
     rootInfo["targetFanRPM"] = status.targetFanRPM;
     rootInfo["loadSignal"]   = status.loadSignal;
-    rootInfo["humidity"]     = status.humidity;
+    rootInfo["humiditySetpoint"] = status.humidity;  // Re — actually the setpoint, not the measurement
     rootInfo["uptime"] = millis() / 1000;
   }
 }
@@ -2515,16 +2515,26 @@ void haConfig()
   // Decoded protocol-v2 telemetry from RK/Rb (no v0 fallback — won't appear if FK absent).
   if (proto == PROTOCOL_S21 && others_haa) {
     String diagPrefix = others_haa_topic + "/sensor/" + mqtt_fn + "/";
-    publishMQTTSensorConfig("Outdoor Fan Target RPM", "_target_fan_rpm", HA_turbine_icon, "RPM", NULL,
+    // RK validated 2026-05-20: tracks indoor fan setting (fan=1→720, fan=5→1050).
+    // The "outdoor fan" label in some Faikout docs is wrong for FTKD-zv2s.
+    publishMQTTSensorConfig("Fan Target RPM", "_target_fan_rpm", HA_turbine_icon, "RPM", NULL,
       ha_state_topic, jsonValueTemplate("targetFanRPM"),
       diagPrefix + "target_fan_rpm/config", "diagnostic");
-    publishMQTTSensorConfig("Indoor Load Signal", "_load_signal", "mdi:gauge", NULL, NULL,
+    // Rb: per Faikout = indoor→outdoor ΔD frequency demand. Not yet user-validated
+    // against compressor frequency changes (compressor stayed idle during testing).
+    publishMQTTSensorConfig("Compressor Load (Rb)", "_load_signal", "mdi:gauge", NULL, NULL,
       ha_state_topic, jsonValueTemplate("loadSignal"),
       diagPrefix + "load_signal/config", "diagnostic");
+    // Re returns a constant 50 on FTKD-zv2s while an external reference sensor
+    // showed real humidity climbing 49→61%. Conclusion: Re is the humidity
+    // SETPOINT (for the remote's Humidity-control mode), not the measurement.
+    // Exposed as diagnostic + no device_class so HA won't treat it as a measurement.
+    // True humidity-sensor command on this model is still unknown.
     if (ac.supportsHumidity()) {
-      publishMQTTSensorConfig("Humidity", "_humidity", "mdi:water-percent", "%", "humidity",
-        ha_state_topic, jsonValueTemplate("humidity"),
-        diagPrefix + "humidity/config");
+      publishMQTTSensorConfig("Humidity Setpoint (Re)", "_humidity_setpoint", "mdi:water-percent",
+        "%", NULL,
+        ha_state_topic, jsonValueTemplate("humiditySetpoint"),
+        diagPrefix + "humidity_setpoint/config", "diagnostic");
     }
 
     // Raw S21 payloads we don't fully understand yet — exposed for graphing.

@@ -83,9 +83,10 @@ struct HVACStatus
   float louverAngle;      // RN — measured louver angle
   int onTimerMinutes;     // RD — ON timer (minutes)
   int offTimerMinutes;    // RE — OFF timer (minutes)
-  int targetFanRPM;       // RK — outdoor unit fan commanded RPM
-  int loadSignal;         // Rb — indoor→outdoor ΔD frequency demand
-  int humidity;           // Re — indoor relative humidity %
+  int targetFanRPM;       // RK — indoor fan target RPM (validated 2026-05-20)
+  int loadSignal;         // Rb — compressor load (per Faikout; not user-validated)
+  int humidity;           // Re — humidity SETPOINT, not measurement (returns const 50 on
+                          // FTKD-zv2s; true measurement command not yet identified)
 };
 
 // Raw payloads of S21 commands whose semantics aren't yet decoded.
