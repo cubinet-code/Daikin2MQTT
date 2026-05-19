@@ -2887,6 +2887,7 @@ void setup()
     // write_log("Connection to HVAC");
     ac.setSettingsChangedCallback(hpSettingsChanged);
     ac.setStatusChangedCallback(hpStatusChanged);
+    ac.setSyncInterval(update_int);  // honor user's web UI choice; default 15s
     ac.connect(acSerial);
     populateRootInfo(ac.getSettings(), ac.getStatus(), true);
     lastTempSend = millis();

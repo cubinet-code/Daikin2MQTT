@@ -169,7 +169,7 @@ bool DaikinController::sync()
   bool success = true;
   bool res = false;
 
-  if (millis() - lastSyncMs < SYNC_INTEVAL)
+  if (millis() - lastSyncMs < _syncIntervalMs)
   {
     return false;
   }

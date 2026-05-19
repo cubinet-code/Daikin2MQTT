@@ -27,7 +27,7 @@
 
 #define S21_RESPONSE_TIMEOUT 250
 
-#define SYNC_INTEVAL 10000
+static const uint32_t SYNC_INTERVAL_DEFAULT_MS = 10000;
 
 enum class DaikinClimateMode : uint8_t
 {
@@ -121,6 +121,7 @@ public:
   const char *getPowerfulSetting();
   void setPowerfulSetting(const char *setting);
   void setEnableRemote(bool enable);
+  void setSyncInterval(uint32_t ms) { _syncIntervalMs = ms; }
   String getModelName();
 
   // Converter
@@ -181,6 +182,7 @@ private:
   PendingSettings pendingSettings = {false, false, false, false};
 
   unsigned long lastSyncMs = 0;
+  uint32_t _syncIntervalMs = SYNC_INTERVAL_DEFAULT_MS;
   bool use_RG_fan = false;     // true once RG returns valid fan speed (overrides F1 byte 3)
 
   // S21 command skip mask — one bit per entry in S21queryCmds[].
