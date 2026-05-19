@@ -590,10 +590,9 @@ bool DaikinController::parseResponse(ACResponse *response)
         }
         return true;
       }
-      case 'e': // Re -> Se -- Humidity
+      case 'e': // Re -> Se -- Humidity (relative %, only on units with humidity sensor)
       {
-        int humidity = bytes_to_num(&payload[0], payloadSize);
-        Log.ln(TAG, "Se Humidity=%d%%", humidity);
+        this->currentStatus.humidity = bytes_to_num(&payload[0], payloadSize);
         return true;
       }
       case 'G':

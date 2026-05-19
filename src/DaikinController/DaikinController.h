@@ -82,6 +82,7 @@ struct HVACStatus
   int offTimerMinutes;    // RE — OFF timer (minutes)
   int targetFanRPM;       // RK — outdoor unit fan commanded RPM
   int loadSignal;         // Rb — indoor→outdoor ΔD frequency demand
+  int humidity;           // Re — indoor relative humidity %
 };
 
 // Raw payloads of S21 commands whose semantics aren't yet decoded.
@@ -182,6 +183,7 @@ public:
   bool supportsLouverAngle() { return !(s21SkipMask & (1ULL << S21_QUERY_RN)); };
   bool supportsOnTimer() { return !(s21SkipMask & (1ULL << S21_QUERY_RD)); };
   bool supportsOffTimer() { return !(s21SkipMask & (1ULL << S21_QUERY_RE)); };
+  bool supportsHumidity() { return !(s21SkipMask & (1ULL << S21_QUERY_Re)); };
 
   // Runtime rediscovery — when a new capability is detected after initial haConfig(),
   // this flag triggers republishing HA discovery so the new entity appears without reboot.

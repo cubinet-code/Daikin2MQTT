@@ -1659,6 +1659,7 @@ void populateRootInfo(const HVACSettings &settings, const HVACStatus &status, bo
     rootInfo["offTimerMinutes"] = status.offTimerMinutes;
     rootInfo["targetFanRPM"] = status.targetFanRPM;
     rootInfo["loadSignal"]   = status.loadSignal;
+    rootInfo["humidity"]     = status.humidity;
     rootInfo["uptime"] = millis() / 1000;
   }
 }
@@ -2475,6 +2476,11 @@ void haConfig()
     publishMQTTSensorConfig("Indoor Load Signal", "_load_signal", "mdi:gauge", NULL, NULL,
       ha_state_topic, jsonValueTemplate("loadSignal"),
       diagPrefix + "load_signal/config", "diagnostic");
+    if (ac.supportsHumidity()) {
+      publishMQTTSensorConfig("Humidity", "_humidity", "mdi:water-percent", "%", "humidity",
+        ha_state_topic, jsonValueTemplate("humidity"),
+        diagPrefix + "humidity/config");
+    }
 
     // Raw S21 payloads we don't fully understand yet — exposed for graphing.
     // Naming convention: HA entity "Raw <CMD>" so user can grep in dashboard.

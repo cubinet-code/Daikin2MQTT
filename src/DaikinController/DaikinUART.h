@@ -82,6 +82,7 @@ enum
 #define S21_QUERY_RE 20
 #define S21_QUERY_RN 26
 #define S21_QUERY_RX 27
+#define S21_QUERY_Re 30
 #define S21_QUERY_FM 31
 
 // S21 query commands — probed sequentially on first sync cycle.
