@@ -170,4 +170,5 @@ enum Buzzer_preset{
   OFF
 };
 bool beep = true;
-bool ledEnabled = true; 
+bool ledEnabled = true;
+bool remoteEnable = true;

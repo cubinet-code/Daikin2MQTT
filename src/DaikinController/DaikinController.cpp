@@ -812,13 +812,17 @@ bool DaikinController::update(bool updateAll)
     {
 
       // Command D2
-      //payload[0]: 0x30 Enable IR Remote, 0x32 Disable IR Remote 
+      //payload[0]: 0x30 Enable IR Remote, 0x32 Disable IR Remote
       payload[0] = (newSettings.remoteEnable ? 0x30 : 0x32);
       payload[1] = '0';
       payload[2] = '0';
       payload[3] = '0';
       pendingSettings.ACconfig = false;
-      res = daikinUART->sendCommandS21('D', '2', payload, 4) & res;
+      bool d2ok = daikinUART->sendCommandS21('D', '2', payload, 4);
+      if (d2ok) {
+        currentSettings.remoteEnable = newSettings.remoteEnable;  // S21 doesn't report lock state back
+      }
+      res = d2ok & res;
     }
 
 
@@ -1122,10 +1126,9 @@ void DaikinController::setPowerfulSetting(const char *setting){
 }
 
 // Enable / Disable physical controls from IR Remote / Front button.
+// Protocol-agnostic: stages the change; the actual D2 send in update() is gated to S21.
+// Callable before connect() (boot path) since it doesn't depend on protocol detection.
 void DaikinController::setEnableRemote(bool isEnable){
-  if (daikinUART->currentProtocol()== PROTOCOL_S21)
-  {
-    newSettings.remoteEnable = isEnable;
-    pendingSettings.ACconfig = true;
-  }
+  newSettings.remoteEnable = isEnable;
+  pendingSettings.ACconfig = true;
 }

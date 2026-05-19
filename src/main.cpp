@@ -345,7 +345,7 @@ void saveMqtt(String mqttFn, String mqttHost, String mqttPort, String mqttUser,
   configFile.close();
 }
 
-void saveUnit(String tempUnit, String supportMode, String updateInterval, String loginPassword, String minTemp, String maxTemp, String tempStep, String beep, String ledEnabled, String insideTempOffset, String outsideTempOffset, String fanSpeedLevels)
+void saveUnit(String tempUnit, String supportMode, String updateInterval, String loginPassword, String minTemp, String maxTemp, String tempStep, String beep, String ledEnabled, String insideTempOffset, String outsideTempOffset, String fanSpeedLevels, String remoteEnableArg)
 {
   JsonDocument doc;
   // if temp unit is empty, we use default celcius
@@ -381,6 +381,9 @@ void saveUnit(String tempUnit, String supportMode, String updateInterval, String
   if (ledEnabled.isEmpty())
     ledEnabled = "1";
   doc["ledEnabled"] = ledEnabled;
+  if (remoteEnableArg.isEmpty())
+    remoteEnableArg = "1";
+  doc["remoteEnable"] = remoteEnableArg;
 
   doc["login_password"] = loginPassword;
   doc["inside_temp_offset"] = insideTempOffset.isEmpty() ? "0" : insideTempOffset;
@@ -432,7 +435,7 @@ void saveOthers(String haa, String haat, String availability_report, String debu
 
 void saveUnitFeedback(bool beepEnabled, bool ledEnabled){
 
-  saveUnit(useFahrenheit?"fah":"cel",  supportHeatMode?"all":"nht", String(update_int/1000), login_password, String(min_temp), String(max_temp), temp_step, beep?"1":"0", ledEnabled?"1":"0", String(inside_temp_offset, 1), String(outside_temp_offset, 1), String(fan_speed_levels));
+  saveUnit(useFahrenheit?"fah":"cel",  supportHeatMode?"all":"nht", String(update_int/1000), login_password, String(min_temp), String(max_temp), temp_step, beep?"1":"0", ledEnabled?"1":"0", String(inside_temp_offset, 1), String(outside_temp_offset, 1), String(fan_speed_levels), remoteEnable?"1":"0");
 }
 
 // Initialize captive portal page
@@ -579,6 +582,11 @@ bool loadUnit()
 
   String ledEnabledStr = doc["ledEnabled"].as<String>();
   ledEnabled = ledEnabledStr == "1";
+
+  if (doc["remoteEnable"].is<JsonVariant>()) {
+    String remoteEnableStr = doc["remoteEnable"].as<String>();
+    remoteEnable = remoteEnableStr != "0";  // default true if key missing or malformed
+  }
 
   if (doc["inside_temp_offset"].is<JsonVariant>())
     inside_temp_offset = doc["inside_temp_offset"].as<float>();
@@ -941,7 +949,7 @@ void handleUnit()
 
   if (server.method() == HTTP_POST)
   {
-    saveUnit(server.arg("tu"), server.arg("md"), server.arg("update_int"), server.arg("lpw"), (String)convertLocalUnitToCelsius(server.arg("min_temp").toInt(), useFahrenheit), (String)convertLocalUnitToCelsius(server.arg("max_temp").toInt(), useFahrenheit), server.arg("temp_step"), server.arg("beep"), server.arg("led"), server.arg("inside_offset"), server.arg("outside_offset"), server.arg("fan_levels"));
+    saveUnit(server.arg("tu"), server.arg("md"), server.arg("update_int"), server.arg("lpw"), (String)convertLocalUnitToCelsius(server.arg("min_temp").toInt(), useFahrenheit), (String)convertLocalUnitToCelsius(server.arg("max_temp").toInt(), useFahrenheit), server.arg("temp_step"), server.arg("beep"), server.arg("led"), server.arg("inside_offset"), server.arg("outside_offset"), server.arg("fan_levels"), remoteEnable?"1":"0");
     rebootAndSendPage();
   }
   else
@@ -2097,17 +2105,15 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   {
     String modeUpper = message;
     modeUpper.toUpperCase();
-    if (modeUpper == "OFF")
+    bool newState = (modeUpper == "ON");
+    if ((modeUpper == "ON" || modeUpper == "OFF") && newState != remoteEnable)
     {
-      ac.setEnableRemote(false);
+      ac.setEnableRemote(newState);
+      remoteEnable = newState;
+      saveUnitFeedback(beep, ledEnabled);
       playBeep(SET);
       ac.update();
-    }
-    else if (modeUpper == "ON")
-    {
-      ac.setEnableRemote(true);
-      playBeep(SET);
-      ac.update();
+      updateUnitSettings();
     }
   }
 

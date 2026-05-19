@@ -4,3 +4,4 @@
 CLAUDE.md
 experiment/
 bin releases/firmware.bin
+.env

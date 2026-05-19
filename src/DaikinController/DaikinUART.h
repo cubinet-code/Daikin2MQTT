@@ -126,7 +126,10 @@ const char* const S21queryCmds[] = {
 
 const char* const S21setCmds[] = {
   "D1",
-  "D5"
+  "D2",
+  "D3",
+  "D5",
+  "D6"
   };
 
 const uint8_t X50queryCmds[] = {0xCA, 0xCB, 0xBD, 0xBE,0xB7}; 
