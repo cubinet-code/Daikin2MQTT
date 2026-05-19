@@ -58,7 +58,8 @@ struct HVACSettings
   const char *fan;
   const char *verticalVane;   // vertical vane, up/down
   const char *horizontalVane; // horizontal vane, left/right
-  const char *powerful; 
+  const char *powerful;
+  const char *comfort;        // ceiling-airflow mode (protocol v2+ only)
   bool remoteEnable;
   // bool connected;
 };
@@ -79,6 +80,25 @@ struct HVACStatus
   float louverAngle;      // RN — measured louver angle
   int onTimerMinutes;     // RD — ON timer (minutes)
   int offTimerMinutes;    // RE — OFF timer (minutes)
+};
+
+// Raw payloads of S21 commands whose semantics aren't yet decoded.
+// Exposed as diagnostic HA sensors so users can graph them over time and
+// detect changes that hint at meaning. Each value is a colon-separated hex
+// string ("30:30:30:30") plus an optional ASCII rendering when printable.
+//
+// Adding new commands here: append a String field, add a case in
+// parseResponse() to populate it, and add an HA discovery entry in haConfig().
+struct DiagSensors
+{
+  // Existing unparsed v2 reads (already in S21queryCmds, payloads previously only logged)
+  String FA, FB, FG, FK, FN, FP, FQ, FS, FT;
+  // New 2-byte F-class reads discovered on FTKD-zv2s
+  String FL, FR, FV;
+  // R-class reads discovered on FTKD-zv2s
+  String RA, RB, RC, RF, RK, Rb_, Rg_;   // _ to avoid clashing with potential macros
+  // FU extension sub-commands (sent with payload, response includes echo of sub-code)
+  String FU00, FU02, FU04;
 };
 
 const char X50errorCodeDivision[] = { ' ', 'A', 'C', 'E', 'H', 'F', 'J', 'L', 'P', 'U', 'M', '6', '8', '9', ' ',' '};
@@ -120,6 +140,8 @@ public:
   void setHorizontalVaneSetting(const char *setting);
   const char *getPowerfulSetting();
   void setPowerfulSetting(const char *setting);
+  const char *getComfortSetting();
+  void setComfortSetting(const char *setting);
   void setEnableRemote(bool enable);
   bool getDesiredRemoteEnable() { return newSettings.remoteEnable; }
   void setSyncInterval(uint32_t ms) { _syncIntervalMs = ms; }
@@ -132,6 +154,7 @@ public:
   // Status accessors (const ref to avoid struct copies in 10s poll loop)
   const HVACStatus& getStatus() { return this->currentStatus; };
   const HVACSettings& getSettings() { return currentSettings; };
+  const DiagSensors& getDiag() { return _diag; };
   float getRoomTemperature() { return this->currentStatus.roomTemperature; };
   bool isConnected() { return daikinUART->isConnected(); };
 
@@ -139,16 +162,20 @@ public:
   // Most use s21SkipMask: if the S21 query command was NAK'd, the feature isn't supported.
   // Some use runtime detection (compressor freq, outside temp) because the command ACKs
   // but returns meaningless data on certain models (e.g., Rd always returns 000 on v0 units).
-  bool supportsPowerful() { return !(s21SkipMask & (1 << S21_QUERY_F6)); };
+  bool supportsPowerful() { return !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
+  // Comfort airflow uses F6/D6 bit 6 — only documented on protocol v2+ units.
+  // Gated on protocol version >= 2 (set by G8 parser) so v0/v1 units don't get
+  // a non-functional switch in HA.
+  bool supportsComfort() { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
   bool supportsVerticalSwing() { return _supportsVerticalSwing; };  // from F2 capability flags
   bool supportsHorizontalSwing() { return _supportsHorizontalSwing; }; // from F2 capability flags
-  bool supportsEnergyMeter() { return !(s21SkipMask & (1 << S21_QUERY_FM)); };
+  bool supportsEnergyMeter() { return !(s21SkipMask & (1ULL << S21_QUERY_FM)); };
   bool supportsCompressorFreq() { return _compressorFreqSeen; };  // true once Rd returns non-zero
   bool supportsOutsideTemp() { return _outsideTempChanged; };     // true once Ra returns a different value
-  bool supportsRealTargetTemp() { return !(s21SkipMask & (1 << S21_QUERY_RX)); };
-  bool supportsLouverAngle() { return !(s21SkipMask & (1 << S21_QUERY_RN)); };
-  bool supportsOnTimer() { return !(s21SkipMask & (1 << S21_QUERY_RD)); };
-  bool supportsOffTimer() { return !(s21SkipMask & (1 << S21_QUERY_RE)); };
+  bool supportsRealTargetTemp() { return !(s21SkipMask & (1ULL << S21_QUERY_RX)); };
+  bool supportsLouverAngle() { return !(s21SkipMask & (1ULL << S21_QUERY_RN)); };
+  bool supportsOnTimer() { return !(s21SkipMask & (1ULL << S21_QUERY_RD)); };
+  bool supportsOffTimer() { return !(s21SkipMask & (1ULL << S21_QUERY_RE)); };
 
   // Runtime rediscovery — when a new capability is detected after initial haConfig(),
   // this flag triggers republishing HA discovery so the new entity appears without reboot.
@@ -176,8 +203,9 @@ private:
   HardwareSerial *_serial{nullptr};
 
   HVACStatus currentStatus{0, 0, 0, 0, 0, 0};
-  HVACSettings currentSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", true};
-  HVACSettings newSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", true};
+  HVACSettings currentSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", true};
+  HVACSettings newSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", true};
+  DiagSensors _diag{};
 
   // Temporary setting value.
   PendingSettings pendingSettings = {false, false, false, false};
@@ -190,7 +218,7 @@ private:
   // Set when a command returns NAK (unsupported by this unit).
   // Checked in sync() to avoid re-sending unsupported commands.
   // Also used by supportsX() methods to gate HA entity discovery.
-  uint32_t s21SkipMask = 0;
+  uint64_t s21SkipMask = 0;
 
   // Hardware capabilities detected from F2 response (one-shot query at first sync).
   // Defaults are true so entities appear if F2 isn't supported (safe fallback).
@@ -198,6 +226,16 @@ private:
   bool _supportsHorizontalSwing = true;
 
   bool _skipRzB2 = false;  // RzB2 is not in the query array, needs its own skip flag
+
+  // Protocol version from G8 (0 = unknown/v0, 2 = v2+ FTKD-zv2s class).
+  // Read once per connection in G8 parser; used by supportsComfort() to gate
+  // protocol-v2-only features that we've only validated on v2 units.
+  uint8_t _protocolVersion = 0;
+
+  // Shadow of last F6 byte 1. Some units set a sticky bit here (function unknown
+  // as of 2026-05-20; possibly streamer/mold-prevention/intelligent-eye). We
+  // preserve it on D6 writes so toggling powerful/comfort doesn't clobber it.
+  uint8_t _lastF6Byte1 = '0';
 
   // Runtime value-change detection for sensors that ACK but return bogus data.
   // Compressor freq: some v0 units always return 000 even when compressor is running.

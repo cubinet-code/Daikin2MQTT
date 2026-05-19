@@ -53,6 +53,14 @@ const char *HORIZONTALVANE_MAP[2] = {"hold", "swing"};
 const byte S21_POWERFUL[2] = {0x00, 0x02};
 const char *S21_POWERFUL_MAP[2] = {"OFF", "ON"};
 
+// Comfort airflow ("ceiling angle") — protocol v2+ only.
+// F6 byte 0 bit 6 (mask 0x40) signals the flag; D6 byte 0 same bit toggles it.
+// When ON, the AC redirects vertical louver upward (cool mode) to avoid direct
+// airflow on occupants; turning it OFF restores the user's louver setting.
+// Verified on FTKD-zv2s (7B91) via MQTT probe + 4 sample snapshots + 3 D6 writes.
+const byte S21_COMFORT[2] = {0x00, 0x40};
+const char *S21_COMFORT_MAP[2] = {"OFF", "ON"};
+
 int16_t bytes_to_num(uint8_t *bytes, size_t len)
 {
   // <ones><tens><hundreds><neg/pos>
@@ -194,7 +202,7 @@ bool DaikinController::sync()
 
     for (int i = 0; i < size; i++)
     {
-      if (s21SkipMask & (1 << i)) continue;
+      if (s21SkipMask & (1ULL << i)) continue;
 
       Log.ln(TAG, "Send command: %s", S21queryCmds[i]);
 
@@ -206,14 +214,14 @@ bool DaikinController::sync()
       }
       else if (daikinUART->lastResultWasNAK())
       {
-        s21SkipMask |= (1 << i);
+        s21SkipMask |= (1ULL << i);
         Log.ln(TAG, "Command %s not supported, skipping", S21queryCmds[i]);
       }
       success = success | res;
     }
 
     // RzB2: read-only powerful/defrost status (fallback when F6 unsupported)
-    if ((s21SkipMask & (1 << 5)) && !_skipRzB2) { // F6 at index 5
+    if ((s21SkipMask & (1ULL << 5)) && !_skipRzB2) { // F6 at index 5
       uint8_t rzPayload[] = {'B', '2'};
       res = daikinUART->sendCommandS21('R', 'z', rzPayload, 2);
       if (res) {
@@ -360,13 +368,13 @@ bool DaikinController::parseResponse(ACResponse *response)
         _supportsVerticalSwing = (payload[0] & 0x04) != 0;   // bit 2
         _supportsHorizontalSwing = (payload[0] & 0x08) != 0; // bit 3
         Log.ln(TAG, "Capabilities: vSwing=%d hSwing=%d", _supportsVerticalSwing, _supportsHorizontalSwing);
-        s21SkipMask |= (1 << S21_QUERY_F2);
+        s21SkipMask |= (1ULL << S21_QUERY_F2);
         return true;
 
       case '3': // F3 -> G3 -- Timer and powerful status (when F6 unsupported)
         this->currentStatus.timerMode = payload[0] - '0';
         // If F6 is unsupported, read powerful from G3 byte 3 bit 1
-        if (s21SkipMask & (1 << S21_QUERY_F6)) {
+        if (s21SkipMask & (1ULL << S21_QUERY_F6)) {
           this->currentSettings.powerful = (payload[3] & 0x02) ? S21_POWERFUL_MAP[1] : S21_POWERFUL_MAP[0];
         }
         return true;
@@ -392,7 +400,14 @@ bool DaikinController::parseResponse(ACResponse *response)
         return true;
 
       case '6': // F6 -> G6 -- Powerful/comfort/quiet/streamer
+        // Byte 0 layout (validated on FTKD-zv2s v2):
+        //   bit 1 (0x02) = powerful (legacy v0/v1 encoding — preserved for compat)
+        //   bit 6 (0x40) = comfort airflow (v2+; redirects louver toward ceiling)
+        // Powerful is also reported via RzB2 on v2 units, which takes priority below.
         this->currentSettings.powerful = (payload[0] & 0x02) ? S21_POWERFUL_MAP[1] : S21_POWERFUL_MAP[0];
+        this->currentSettings.comfort  = (payload[0] & 0x40) ? S21_COMFORT_MAP[1]  : S21_COMFORT_MAP[0];
+        // Shadow byte 1 — unknown sticky flag we round-trip on D6 to avoid clobbering it.
+        if (payloadSize > 1) _lastF6Byte1 = payload[1];
         return true;
 
 
@@ -409,10 +424,11 @@ bool DaikinController::parseResponse(ACResponse *response)
       case '8': // F8 -> G8 -- Protocol version (static, read once)
       {
         uint8_t protoVer = (payloadSize > 1) ? (payload[1] & ~0x30) : 0;
+        this->_protocolVersion = protoVer;
         Log.ln(TAG, "G8 Protocol version=%d (raw: %02X %02X %02X)", protoVer,
           payloadSize > 0 ? payload[0] : 0, payloadSize > 1 ? payload[1] : 0,
           payloadSize > 2 ? payload[2] : 0);
-        s21SkipMask |= (1 << S21_QUERY_F8);
+        s21SkipMask |= (1ULL << S21_QUERY_F8);
         return true;
       }
 
@@ -424,18 +440,28 @@ bool DaikinController::parseResponse(ACResponse *response)
         return true;
       }
 
-      case 'C': // FC -> GC -- Model identification (static, read once)
+      // FC — Model identification
+      //   Direction: read (controller → AC)
+      //   Response:  GC, ASCII model string (variable length, padded)
+      //   Payload:   printable ASCII chars (alphanumeric, '-', ' '), stops on first non-printable
+      //   Protocol:  v0+ (universal)
+      //   Static:    one-shot, skip-masked after first ACK
+      //   Source:    Faikout wiki S21-Protocol, verified on FTKQ + FTKD-zv2s ("7B91")
+      case 'C':
       {
         char model[32] = {0};
         int len = (payloadSize > 31) ? 31 : payloadSize;
+        int modelLen = 0;
         for (int i = 0; i < len; i++) {
-          if (isalnum(payload[i]) || payload[i] == '-' || payload[i] == ' ')
-            model[i] = payload[i];
-          else
+          if (isalnum(payload[i]) || payload[i] == '-' || payload[i] == ' ') {
+            model[modelLen++] = payload[i];
+          } else {
             break;
+          }
         }
+        this->currentStatus.modelName = String(model, modelLen);
         Log.ln(TAG, "GC Model: %s (raw: %d bytes)", model, payloadSize);
-        s21SkipMask |= (1 << S21_QUERY_FC);
+        s21SkipMask |= (1ULL << S21_QUERY_FC);
         return true;
       }
 
@@ -804,22 +830,26 @@ bool DaikinController::update(bool updateAll)
       pendingSettings.vane = false;
     }
     
-    // Powerful mode: D6 is the primary command (byte 0, bit 1 = powerful).
-    // If F6 was NAK'd (unit doesn't support D6), fall back to D3 (byte 3, bit 1).
-    // Some units ACK D3 but ignore it — this is a known S21 protocol limitation.
+    // Special modes (D6): byte 0 carries powerful (bit 1) + comfort (bit 6) flags,
+    // byte 1 is a sticky unknown flag we round-trip from the last F6 read so we
+    // don't accidentally clear it. If F6 was NAK'd (v0-style unit), fall back to
+    // D3 byte 3 for powerful only; comfort is v2+ and silently dropped on D3 path.
     // See: https://github.com/revk/ESP32-Faikout/issues/817
     if (pendingSettings.specialMode || updateAll)
     {
       bool sent = false;
-      if (!(s21SkipMask & (1 << S21_QUERY_F6))) { // try D6
-        payload[0] = '0' + S21_POWERFUL[lookupByteMapIndex(S21_POWERFUL_MAP, 2, newSettings.powerful)];
-        payload[1] = '0';
+      if (!(s21SkipMask & (1ULL << S21_QUERY_F6))) { // try D6
+        uint8_t b0 = '0'
+          + S21_POWERFUL[lookupByteMapIndex(S21_POWERFUL_MAP, 2, newSettings.powerful)]
+          + S21_COMFORT[lookupByteMapIndex(S21_COMFORT_MAP, 2, newSettings.comfort)];
+        payload[0] = b0;
+        payload[1] = _lastF6Byte1;  // preserve sticky byte-1 flag
         payload[2] = '0';
         payload[3] = '0';
         sent = daikinUART->sendCommandS21('D', '6', payload, 4);
         if (!sent) Log.ln(TAG, "D6 failed, will try D3 fallback");
       }
-      if (!sent) { // F6 NAK'd or D6 failed → try D3 (powerful in byte 3)
+      if (!sent) { // F6 NAK'd or D6 failed → try D3 (powerful in byte 3, comfort unsupported)
         payload[0] = '0';
         payload[1] = '0';
         payload[2] = '0';
@@ -829,6 +859,7 @@ bool DaikinController::update(bool updateAll)
       }
       if (sent) {
         currentSettings.powerful = newSettings.powerful;  // mirror so state echo is immediate
+        currentSettings.comfort  = newSettings.comfort;
       }
       res = res & sent;
       pendingSettings.specialMode = false;
@@ -1064,6 +1095,16 @@ const char *DaikinController::getPowerfulSetting(){
 void DaikinController::setPowerfulSetting(const char *setting){
   if (daikinUART->currentProtocol() == PROTOCOL_S21) {
     if (assignMapped(newSettings.powerful, S21_POWERFUL_MAP, 2, setting)) pendingSettings.specialMode = true;
+  }
+}
+
+const char *DaikinController::getComfortSetting(){
+  return currentSettings.comfort;
+}
+
+void DaikinController::setComfortSetting(const char *setting){
+  if (daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (assignMapped(newSettings.comfort, S21_COMFORT_MAP, 2, setting)) pendingSettings.specialMode = true;
   }
 }
 

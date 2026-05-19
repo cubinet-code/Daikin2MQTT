@@ -1640,6 +1640,7 @@ void populateRootInfo(const HVACSettings &settings, const HVACStatus &status, bo
   rootInfo["wideVane"] = settings.horizontalVane;
   rootInfo["mode"] = hpGetMode(settings);
   rootInfo["powerful"] = settings.powerful;
+  rootInfo["comfort"] = settings.comfort;
 
   if (fullStatus) {
     rootInfo["roomTemperature"] = convertCelsiusToLocalUnit(status.roomTemperature + inside_temp_offset, useFahrenheit);
@@ -2045,6 +2046,18 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
       publishHpState();
     }
   }
+  else if (strcmp(topic, ha_switch_comfort_set_topic.c_str()) == 0)
+  {
+    String modeUpper = message;
+    modeUpper.toUpperCase();
+    if ((modeUpper == "ON" || modeUpper == "OFF") && strcmp(modeUpper.c_str(), ac.getComfortSetting()) != 0)
+    {
+      ac.setComfortSetting(modeUpper.c_str());
+      playBeep(SET);
+      ac.update();
+      publishHpState();
+    }
+  }
   else if (strcmp(topic, ha_preset_mode_set_topic.c_str()) == 0)
   {
     const char *newPowerful = (strcmp(message, "boost") == 0) ? "ON" : "OFF";
@@ -2414,6 +2427,14 @@ void haConfig()
       ha_switch_powerful_config_topic);
   }
 
+  // Comfort Airflow Switch Config — protocol v2+ only (redirects louver toward ceiling)
+  if (proto == PROTOCOL_S21 && ac.supportsComfort()){
+    publishMQTTSwitchConfig("Comfort Airflow", "_comfort", HA_comfort,
+      ha_switch_comfort_set_topic, ha_state_topic,
+      F("{{ value_json.comfort if (value_json is defined and value_json.comfort is defined and value_json.comfort|length) else 'OFF' }}"),
+      ha_switch_comfort_config_topic);
+  }
+
   // Disable / Enable remote switch
   if (proto == PROTOCOL_S21){
     publishMQTTSwitchConfig("Enable IR Remote", "_enable_remote_ctrl", HA_remote_off,
@@ -2468,6 +2489,7 @@ void mqttConnect()
       mqtt_client.subscribe(ha_switch_unit_led_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_unit_beep_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_powerful_set_topic.c_str());
+      mqtt_client.subscribe(ha_switch_comfort_set_topic.c_str());
       mqtt_client.subscribe(ha_preset_mode_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_remote_enable_set_topic.c_str());
       mqtt_client.publish(ha_availability_topic.c_str(), !_debugMode ? mqtt_payload_available : mqtt_payload_unavailable, true); // publish status as available
@@ -2868,6 +2890,7 @@ void setup()
       ha_switch_unit_led_set_topic = mqtt_topic + "/" + mqtt_fn + "/led/set";
       ha_switch_unit_beep_set_topic = mqtt_topic + "/" + mqtt_fn + "/beep/set";
       ha_switch_powerful_set_topic = mqtt_topic + "/" + mqtt_fn + "/powerful/set";
+      ha_switch_comfort_set_topic = mqtt_topic + "/" + mqtt_fn + "/comfort/set";
       ha_preset_mode_set_topic = mqtt_topic + "/" + mqtt_fn + "/preset/set";
       ha_switch_remote_enable_set_topic =  mqtt_topic + "/" + mqtt_fn + "/remote_enable/set";
 
@@ -2891,6 +2914,7 @@ void setup()
         ha_switch_unit_led_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/led/config";
         ha_switch_unit_beep_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/beep/config";
         ha_switch_powerful_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/powerful/config";
+        ha_switch_comfort_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/comfort/config";
         ha_switch_remote_enable_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/remote_enable/config";
       }
       // startup mqtt connection

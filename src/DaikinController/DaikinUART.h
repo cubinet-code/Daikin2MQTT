@@ -121,7 +121,20 @@ const char* const S21queryCmds[] = {
   "Ra",         // 28 - Outside temperature (high res)
   "Rd",         // 29 - Compressor frequency
   "Re",         // 30 - Humidity
-  "FM"          // 31 - Energy Meter
+  "FM",         // 31 - Energy Meter
+  // New v2 commands discovered by probing FTKD-zv2s (model 7B91, protocol v2).
+  // Meaning unknown; raw payloads exposed as diagnostic sensors so users can graph
+  // them and watch for changes that hint at semantics.
+  "FL",         // 32 - Unknown 2-byte cmd, observed constant "0000"
+  "FR",         // 33 - Unknown 2-byte cmd, observed "?O00"
+  "FV",         // 34 - Unknown 2-byte cmd, contains binary 0x83 byte
+  "RA",         // 35 - Unknown R-class, observed "1"
+  "RB",         // 36 - Unknown R-class, observed "3"
+  "RC",         // 37 - Unknown R-class, observed "420+" (signed-decimal format like RH)
+  "RF",         // 38 - Unknown R-class, observed "7F"
+  "RK",         // 39 - Unknown R-class, observed "580" (numeric)
+  "Rb",         // 40 - Unknown R-class (lowercase b), observed "500"
+  "Rg",         // 41 - Unknown R-class (lowercase g), observed "1"
   };
 
 const char* const S21setCmds[] = {
