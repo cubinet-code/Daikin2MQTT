@@ -65,7 +65,7 @@ const PROGMEM char* HA_alert = "mdi:alert-circle";
 const PROGMEM char* HA_powerful = "mdi:wind-power";
 const PROGMEM char* HA_comfort = "mdi:air-conditioner";
 const PROGMEM char* HA_quiet = "mdi:volume-mute";
-const PROGMEM char* HA_streamer = "mdi:weather-windy";
+const PROGMEM char* HA_streamer = "mdi:air-purifier";
 const PROGMEM char* HA_econo = "mdi:leaf";
 const PROGMEM char* HA_remote_off = "mdi:remote-off";
 
