@@ -53,6 +53,22 @@ const char *HORIZONTALVANE_MAP[2] = {"hold", "swing"};
 const byte S21_POWERFUL[2] = {0x00, 0x02};
 const char *S21_POWERFUL_MAP[2] = {"OFF", "ON"};
 
+// FC code → friendly model family lookup. Daikin's FC command returns a 4-char
+// ASCII MCU/PCB firmware identifier ("7B91" on our two units) which isn't the
+// customer-visible model name. Faikout suspects the first byte encodes capacity,
+// but we lack the data to bit-decode — only the family is claimed here.
+// Add new entries as we encounter other units. The raw code is preserved in the
+// firmware log on first GC parse, so it's always recoverable.
+struct DaikinModelMap { const char *code; const char *family; };
+const DaikinModelMap DAIKIN_KNOWN_MODELS[] = {
+  // FC sits on the indoor PCB so the most likely identification is the indoor
+  // unit (FTKD15ZV2S). But indoor+outdoor are factory-paired, so the same code
+  // also implies the matched outdoor RKD15ZV2S. We claim the customer-facing
+  // family name FTKD-ZV2S without making a BTU/capacity claim until we see
+  // another capacity variant.
+  {"7B91", "FTKD-ZV2S"},
+};
+
 // F6/D6 special-mode bit layout (FTKD-zv2s v2 — verified by remote-button probe):
 //   byte 0 bit 1 (0x02): powerful  (legacy v0/v1 indicator — RzB2 authoritative on v2)
 //   byte 0 bit 6 (0x40): comfort   (redirects vertical louver toward ceiling)
@@ -488,8 +504,14 @@ bool DaikinController::parseResponse(ACResponse *response)
             break;
           }
         }
-        this->currentStatus.modelName = String(model, modelLen);
-        Log.ln(TAG, "GC Model: %s (raw: %d bytes)", model, payloadSize);
+        // Translate the raw 4-char FC code to a friendly family name if we know
+        // it; fall back to the raw code so unknown units still show something.
+        const char *friendly = model;
+        for (auto &m : DAIKIN_KNOWN_MODELS) {
+          if (strcmp(model, m.code) == 0) { friendly = m.family; break; }
+        }
+        this->currentStatus.modelName = String(friendly);
+        Log.ln(TAG, "GC Model: raw=%s friendly=%s (%d bytes)", model, friendly, payloadSize);
         s21SkipMask |= (1ULL << S21_QUERY_FC);
         return true;
       }
