@@ -592,6 +592,19 @@ bool DaikinController::parseResponse(ACResponse *response)
         this->currentStatus.energyMeterFA = s21_decode_hex_sensor(payload) / 10.0;
         return true;
 
+      case 'K': // FK -> GK -- capability bitmap (folded into HA climate attributes)
+      {
+        // Keep the ASCII rendering ("qs51"/"0:11"/"0251") for reference. Bit
+        // semantics are per-model; only byte3 b0 (demand-mode available) is
+        // reliable across all three known models, so that's all we decode.
+        String ascii;
+        for (uint8_t i = 0; i < payloadSize; i++)
+          ascii += isprint(payload[i]) ? (char)payload[i] : '?';
+        _fkRaw = ascii;
+        if (payloadSize >= 4) _demandAvailable = (payload[3] & 0x01);
+        return true;
+      }
+
       // FU<sub> -> GU<sub> -- protocol-v2 extension reads.
       // Payload[0..1] echoes the sub-command; remaining bytes are the data.
       case 'U':
@@ -618,7 +631,6 @@ bool DaikinController::parseResponse(ACResponse *response)
         switch (cmd2_in) {
           case 'B': _diag.FB = hex; break;
           case 'G': _diag.FG = hex; break;
-          case 'K': _diag.FK = hex; break;
           case 'N': _diag.FN = hex; break;
           case 'P': _diag.FP = hex; break;
           case 'Q': _diag.FQ = hex; break;

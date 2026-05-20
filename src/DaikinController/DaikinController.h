@@ -104,9 +104,9 @@ struct HVACStatus
 // parseResponse() to populate it, and add an HA discovery entry in haConfig().
 struct DiagSensors
 {
-  // Single-byte F-class reads. FK kept as the parse landing spot for climate
-  // attributes (no longer raw-published); FA fully decoded to an energy sensor.
-  String FB, FG, FK, FN, FP, FQ, FT;
+  // Single-byte F-class reads still exposed raw for graphing (FA decoded to an
+  // energy sensor; FK decoded into climate attributes — both no longer here).
+  String FB, FG, FN, FP, FQ, FT;
   // 2-byte F-class reads discovered on FTKD-zv2s, meanings still unknown.
   String FR, FV;
   // R-class reads (unknown semantics) exposed as numeric sensors for long-run
@@ -178,6 +178,12 @@ public:
   void setSyncInterval(uint32_t ms) { _syncIntervalMs = ms; }
   String getModelName();
   String getManualUrl();
+  // Folded into the HA climate entity's json_attributes (1.4-b5).
+  bool hasPowerful()     { return _hasPowerful; }
+  bool hasEcono()        { return _hasEcono; }
+  bool hasStreamer()     { return _hasStreamer; }
+  String getFkRaw()      { return _fkRaw; }          // FK bitmap as ASCII ("qs51")
+  bool demandAvailable() { return _demandAvailable; }
 
   // Converter
   String daikin_climate_mode_to_string(DaikinClimateMode mode);
@@ -291,6 +297,13 @@ private:
   bool _hasPowerful = false;
   bool _hasEcono    = false;
   bool _hasStreamer = false;
+
+  // FK capability bitmap. Bit semantics are per-model and only medium-confidence
+  // (sim comments, not the production decoder); the FTKD "qs51" decode does NOT
+  // transfer to FTKC/FTKQ. Only byte3 b0 (demand-mode available) is consistent
+  // across all three known models. Raw ASCII is kept for reference in HA attrs.
+  String _fkRaw;
+  bool _demandAvailable = false;
 
   // Latched true when the controller sees a humidity reading that isn't the
   // Faikout-documented "no sensor" placeholder. Drives supportsHumidity().

@@ -1668,7 +1668,6 @@ void populateRootInfo(const HVACSettings &settings, const HVACStatus &status, bo
     rootInfo["action"] = hpGetAction(status, settings);
     rootInfo["compressorFrequency"] = status.compressorFrequency;
     rootInfo["errorCode"] = status.errorCode;
-    rootInfo["manualUrl"] = ac.getManualUrl();
     rootInfo["timerMode"] = status.timerMode == 0 ? "OFF" :
                             status.timerMode == 1 ? "ON_TIMER" :
                             status.timerMode == 2 ? "OFF_TIMER" : "BOTH";
@@ -1809,6 +1808,20 @@ void publishHpState()
   }
   if (ac.daikinUART->currentProtocol() == PROTOCOL_S21 && currentStatus.energyMeterFA != 0.0){
     rootInfo["energyFA"] = (int)(currentStatus.energyMeterFA * 100 + 0.5) / 100.0;
+  }
+  // Climate diagnostic attributes (manual URL + FU00 special-mode availability +
+  // FK capability bitmap), surfaced via the climate entity's json_attributes_topic.
+  if (ac.daikinUART->currentProtocol() == PROTOCOL_S21) {
+    JsonObject attrs = rootInfo["attributes"].to<JsonObject>();
+    attrs["manual_url"] = ac.getManualUrl();
+    JsonObject sm = attrs["special_modes"].to<JsonObject>();
+    sm["powerful"] = ac.hasPowerful();
+    sm["econo"]    = ac.hasEcono();
+    sm["streamer"] = ac.hasStreamer();
+    if (!ac.getFkRaw().isEmpty()) {
+      attrs["fk_raw"] = ac.getFkRaw();
+      attrs["demand_available"] = ac.demandAvailable();
+    }
   }
   String mqttOutput;
   serializeJson(rootInfo, mqttOutput);
@@ -2482,6 +2495,15 @@ void haConfig()
   haClimateConfig["action_topic"] = ha_state_topic;
   haClimateConfig["action_template"] = F("{{ value_json.action if (value_json is defined and value_json.action is defined and value_json.action|length) else 'idle' }}"); // Set default value for fix "Could not parse data for HA"
 
+  // Diagnostic attributes (manual URL, FU00 special-mode availability, FK
+  // capability bitmap) folded onto the climate entity instead of standalone
+  // sensors. Sourced from the rootInfo "attributes" object built in publishHpState.
+  if (proto == PROTOCOL_S21) {
+    haClimateConfig["json_attributes_topic"] = ha_state_topic;
+    haClimateConfig["json_attributes_template"] =
+      F("{{ value_json.attributes | tojson if (value_json is defined and value_json.attributes is defined) else '{}' }}");
+  }
+
   publishMQTTDiscovery(haClimateConfig, ha_climate_config_topic);
 
   //
@@ -2517,10 +2539,9 @@ void haConfig()
     "'L4':'Radiation fin temp','L5':'Output overcurrent','P4':'Fin thermistor'} %}"
     "{% if c in ['','00'] %}OK{% elif c in m %}{{ c }} - {{ m[c] }}{% else %}{{ c }}{% endif %}");
   publishMQTTSensorConfig("Error Code", "_error_code", HA_alert, NULL, NULL, ha_state_topic, errorCodeTemplate, ha_sensor_error_code_config_topic, "diagnostic");
-  // Manual link — only exposed for models with a mapped URL (skipped at connect-time
-  // before the model is read; published once the FC model query has resolved).
-  if (!ac.getManualUrl().isEmpty())
-    publishMQTTSensorConfig("Manual", "_manual_url", "mdi:book-open-variant", NULL, NULL, ha_state_topic, jsonValueTemplate("manualUrl"), ha_sensor_manual_url_config_topic, "diagnostic");
+  // Manual URL moved into the climate entity's json_attributes (1.4-b5). Drop
+  // the standalone diagnostic sensor (empty-retained config so HA forgets it).
+  if (others_haa) mqtt_client.publish(ha_sensor_manual_url_config_topic.c_str(), "", true);
   publishMQTTSensorConfig("Timer", "_timer_mode", "mdi:timer-outline", NULL, NULL, ha_state_topic, jsonValueTemplate("timerMode"), ha_sensor_timer_mode_config_topic);
 
   if (proto == PROTOCOL_S21 && ac.supportsEnergyMeter()){
