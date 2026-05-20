@@ -2,6 +2,7 @@
 .vscode/
 .DS_Store
 CLAUDE.md
+.mcp.json
 experiment/
 bin releases/firmware.bin
 .env
