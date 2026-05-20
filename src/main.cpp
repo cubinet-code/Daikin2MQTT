@@ -2465,9 +2465,9 @@ void haConfig()
     publishMQTTSensorConfig("Outdoor Unit Temperature", "_outside_temp", HA_thermometer_icon, useFahrenheit ? "°F" : "°C", "temperature", ha_state_topic, outside_temp_tpl_str, ha_sensor_outside_temp_config_topic);
   }
   publishMQTTSensorConfig("Coil temperature", "_inside_coil_temp", HA_coil_icon, useFahrenheit ? "°F" : "°C", "temperature", ha_state_topic, inside_coil_temp_tpl_str, ha_sensor_inside_coil_temp_config_topic);
-  publishMQTTSensorConfig("Fan RPM", "_inside_fan_rpm", HA_turbine_icon, "RPM", NULL, ha_state_topic, jsonValueTemplate("fanRPM"), ha_sensor_fan_rpm_temp_config_topic);
+  publishMQTTSensorConfig("Fan RPM", "_inside_fan_rpm", HA_turbine_icon, "RPM", NULL, ha_state_topic, jsonValueTemplate("fanRPM"), ha_sensor_fan_rpm_temp_config_topic, "", "measurement");
   if (ac.supportsCompressorFreq()) {
-    publishMQTTSensorConfig("Compressor Frequency", "_comp_freq", HA_sine_wave_icon, "Hz", NULL, ha_state_topic, jsonValueTemplate("compressorFrequency"), ha_sensor_comp_freq_config_topic);
+    publishMQTTSensorConfig("Compressor Frequency", "_comp_freq", HA_sine_wave_icon, "Hz", NULL, ha_state_topic, jsonValueTemplate("compressorFrequency"), ha_sensor_comp_freq_config_topic, "", "measurement");
   }
   publishMQTTSensorConfig("Error Code", "_error_code", HA_alert, NULL, NULL, ha_state_topic, jsonValueTemplate("errorCode"), ha_sensor_error_code_config_topic, "diagnostic");
   publishMQTTSensorConfig("Timer", "_timer_mode", "mdi:timer-outline", NULL, NULL, ha_state_topic, jsonValueTemplate("timerMode"), ha_sensor_timer_mode_config_topic);
@@ -2574,7 +2574,7 @@ void haConfig()
     // The "outdoor fan" label in some Faikout docs is wrong for FTKD-zv2s.
     publishMQTTSensorConfig("Fan Target RPM", "_target_fan_rpm", HA_turbine_icon, "RPM", NULL,
       ha_state_topic, jsonValueTemplate("targetFanRPM"),
-      diagPrefix + "target_fan_rpm/config", "diagnostic");
+      diagPrefix + "target_fan_rpm/config", "diagnostic", "measurement");
     // Rb: per Faikout = indoor→outdoor ΔD frequency demand. Not yet user-validated
     // against compressor frequency changes (compressor stayed idle during testing).
     publishMQTTSensorConfig("Compressor Load (Rb)", "_load_signal", "mdi:gauge", NULL, NULL,
