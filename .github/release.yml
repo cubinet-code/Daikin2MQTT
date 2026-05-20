@@ -1,0 +1,21 @@
+# Configures GitHub's auto-generated release notes (the "What's Changed" section
+# appended below the hand-written highlights in each release).
+# https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes
+#
+# Grouping is by PR label. When a release is cut from a series of merged PRs,
+# label them (feature, fix, protocol, chore, …) to sort them into these buckets.
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+  categories:
+    - title: 🚀 Features
+      labels: [feature, enhancement]
+    - title: 🐛 Fixes
+      labels: [fix, bug]
+    - title: 📡 Protocol & compatibility
+      labels: [protocol, compatibility]
+    - title: 🧰 Maintenance & CI
+      labels: [chore, ci, docs, build]
+    - title: Other changes
+      labels: ['*']
