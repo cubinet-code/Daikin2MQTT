@@ -3,8 +3,6 @@
 .DS_Store
 CLAUDE.md
 .mcp.json
-experiment/
 releases/*.bin
 .env
-.fu04-baseline.txt
 docs
