@@ -13,7 +13,7 @@ def copy_firmware(source, target, env):
                 break
 
     src = str(target[0])
-    dest_dir = os.path.join(env["PROJECT_DIR"], "bin releases")
+    dest_dir = os.path.join(env["PROJECT_DIR"], "releases")
     os.makedirs(dest_dir, exist_ok=True)
     dest = os.path.join(dest_dir, f"Daikin2MQTT_{version}_OTA.bin")
     shutil.copy2(src, dest)
