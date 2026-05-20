@@ -8,6 +8,28 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.4-b6] - 2026-05-20
+
+Cross-model fidelity, from Max's FTKQ12UV2S testing + the three-unit boot logs.
+FTKD behavior is unchanged.
+
+### Fixed
+- **Special-mode entities no longer appear on units that can't use them.** On FTKC/FTKQ
+  (which lack the FU00 special-mode extension), Powerful, Econo, Comfort Airflow and LED
+  Brightness used to show in Home Assistant but their writes silently bounced. They are now
+  gated on the FU00 capability so they only appear where they actually work. FTKD keeps all of
+  them; legacy v0/v1 units are unaffected (they keep the previous F6/F7 gate).
+
+### Changed
+- **Default fan-speed levels is now 5** (was 3) — most v2 wall units are 5-speed, so they now
+  expose the full fan range out of the box. Units explicitly configured otherwise keep their
+  setting; genuine 3-speed units can still select 3 in the web UI.
+
+### Notes
+- Streamer is intentionally left visible on all v2 units: FTKC (Flash Streamer line) has the
+  hardware and the protocol can't distinguish it from FTKQ. Power Limit / demand control is
+  unchanged — it works on FTKQ (compressor frequency responds).
+
 ## [1.4-b5] - 2026-05-20
 
 A diagnostics overhaul following the full S21 read-surface mapping: drop the
@@ -109,7 +131,8 @@ snappier control experience.
 
 Previous published release.
 
-[Unreleased]: https://github.com/cubinet-code/Daikin2MQTT/compare/v1.4-b5...HEAD
+[Unreleased]: https://github.com/cubinet-code/Daikin2MQTT/compare/v1.4-b6...HEAD
+[1.4-b6]: https://github.com/cubinet-code/Daikin2MQTT/compare/v1.4-b5...v1.4-b6
 [1.4-b5]: https://github.com/cubinet-code/Daikin2MQTT/compare/v1.4-b4...v1.4-b5
 [1.4-b4]: https://github.com/cubinet-code/Daikin2MQTT/compare/v1.4-b3...v1.4-b4
 [1.4-b3]: https://github.com/cubinet-code/Daikin2MQTT/compare/V1.2...v1.4-b3

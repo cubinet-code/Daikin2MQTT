@@ -611,6 +611,7 @@ bool DaikinController::parseResponse(ACResponse *response)
       {
         if (payloadSize < 2) return false;
         if (payload[0] == '0' && payload[1] == '0') {
+          _fu00Seen = true;  // v2 special-mode extension present (FTKD; not FTKC/FTKQ)
           // en_spmode bitmap: byte 0 = powerful, 1 = econo, 5 = streamer (Faikout).
           // '3' = available — drives capability gating + the climate special_modes attr.
           if (payloadSize >= 3) _hasPowerful = (payload[2] == '3');

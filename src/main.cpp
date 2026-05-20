@@ -389,7 +389,7 @@ void saveUnit(String tempUnit, String supportMode, String updateInterval, String
   doc["login_password"] = loginPassword;
   doc["inside_temp_offset"] = insideTempOffset.isEmpty() ? "0" : insideTempOffset;
   doc["outside_temp_offset"] = outsideTempOffset.isEmpty() ? "0" : outsideTempOffset;
-  doc["fan_speed_levels"] = fanSpeedLevels.isEmpty() ? "3" : fanSpeedLevels;
+  doc["fan_speed_levels"] = fanSpeedLevels.isEmpty() ? "5" : fanSpeedLevels;
   File configFile = SPIFFS.open(unit_conf, "w");
   if (!configFile)
   {

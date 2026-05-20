@@ -17,7 +17,7 @@
 */
 
 
-const PROGMEM char* dk2mqtt_version = "1.4-b5";
+const PROGMEM char* dk2mqtt_version = "1.4-b6";
 
 //Define global variables for files
 const PROGMEM char* wifi_conf = "/wifi.json";
@@ -169,7 +169,7 @@ String temp_step                    = "0.5"; // Temperature setting step, check 
 uint32_t update_int                 = SEND_ROOM_TEMP_INTERVAL_MS;
 float inside_temp_offset            = 0.0;
 float outside_temp_offset           = 0.0;
-uint8_t fan_speed_levels            = 3; // 3 or 5 fan speed levels
+uint8_t fan_speed_levels            = 5; // 3 or 5 fan speed levels (default 5 — most v2 wall units are 5-speed; override in web UI for 3-speed units)
 
 
 // temp settings

@@ -199,14 +199,24 @@ public:
   // Most use s21SkipMask: if the S21 query command was NAK'd, the feature isn't supported.
   // Some use runtime detection (compressor freq, outside temp) because the command ACKs
   // but returns meaningless data on certain models (e.g., Rd always returns 000 on v0 units).
-  bool supportsPowerful() { return !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
+  // Special modes on v2 units require the FU00 extension (en_spmode bitmap): FTKD
+  // supports it; FTKC/FTKQ NAK it and their D6 special-mode writes bounce, so the
+  // entities would be non-functional. v0/v1 units keep the legacy F6/F7 gate (no
+  // FU00 concept) so they aren't regressed. See docs/superpowers/specs 1.4-b6.
+  bool supportsPowerful() { return (_protocolVersion < 2) ? !(s21SkipMask & (1ULL << S21_QUERY_F6))
+                                                          : (!(s21SkipMask & (1ULL << S21_QUERY_F6)) && _hasPowerful); };
   // Comfort airflow uses F6/D6 bit 6 — only documented on protocol v2+ units.
   // Gated on protocol version >= 2 (set by G8 parser) so v0/v1 units don't get
-  // a non-functional switch in HA.
-  bool supportsComfort()  { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
-  bool supportsQuiet()    { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
+  // a non-functional switch in HA; plus _fu00Seen so v2 units without the
+  // extension (FTKC/FTKQ) don't get a bouncing switch.
+  bool supportsComfort()  { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)) && _fu00Seen; };
+  bool supportsQuiet()    { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)) && _fu00Seen; };
+  // Streamer deliberately NOT FU00-gated: FTKC (Flash Streamer line) has it, and
+  // FU00-NAK can't tell FTKC from FTKQ, so a gate would wrong-hide it. FTKQ shows
+  // a cosmetic N/A entity until an FTKC write test lets us gate by model.
   bool supportsStreamer() { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
-  bool supportsEcono()    { return !(s21SkipMask & (1ULL << S21_QUERY_F7)); };
+  bool supportsEcono()    { return (_protocolVersion < 2) ? !(s21SkipMask & (1ULL << S21_QUERY_F7))
+                                                          : (!(s21SkipMask & (1ULL << S21_QUERY_F7)) && _hasEcono); };
   // Demand control rides the same F7/D7 command (byte 0). If the unit speaks F7,
   // it accepts the demand field — it just doesn't echo the active cap back (G7
   // byte 0 always reads 100%), so the HA entity is optimistic/write-only.
@@ -214,7 +224,7 @@ public:
   // Display (LED) brightness rides F6/D6 byte 3 — only present on v2+ units that
   // return a 4-byte G6 payload. _ledBrightnessSeen latches true once the G6 parser
   // sees that 4th byte, so we don't expose the select on units that lack it.
-  bool supportsLEDBrightness() { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)) && _ledBrightnessSeen; };
+  bool supportsLEDBrightness() { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)) && _ledBrightnessSeen && _fu00Seen; };
   bool supportsVerticalSwing() { return _supportsVerticalSwing; };  // from F2 capability flags
   bool supportsHorizontalSwing() { return _supportsHorizontalSwing; }; // from F2 capability flags
   bool supportsEnergyMeter() { return !(s21SkipMask & (1ULL << S21_QUERY_FM)); };
@@ -296,6 +306,10 @@ private:
   bool _hasPowerful = false;
   bool _hasEcono    = false;
   bool _hasStreamer = false;
+  // Latched true when FU00 parses successfully — the "v2 special-mode extension
+  // present" marker (FTKD yes; FTKC/FTKQ NAK FU00 so it stays false). Gates the
+  // special-mode entities that have no dedicated FU00 bit (comfort/quiet/LED).
+  bool _fu00Seen = false;
 
   // FK capability bitmap. Bit semantics are per-model and only medium-confidence
   // (sim comments, not the production decoder); the FTKD "qs51" decode does NOT
