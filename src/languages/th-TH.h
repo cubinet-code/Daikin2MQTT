@@ -79,6 +79,7 @@ const char txt_others_debug[] PROGMEM = "ดีบัก";
 //Page Status
 const char txt_status_title[] PROGMEM = "สถานะ";
 const char txt_status_hvac[] PROGMEM = "สถานะเครื่องปรับอากาศ";
+const char txt_status_model[] PROGMEM = "รุ่น";
 const char txt_retries_hvac[] PROGMEM = "จำนวนครั้งที่ลองเชื่อมต่อ";
 const char txt_status_mqtt[] PROGMEM = "สถานะ MQTT";
 const char txt_status_wifi[] PROGMEM = "สัญญาณ WIFI";

@@ -99,6 +99,7 @@ String ha_sensor_inside_coil_temp_config_topic;
 String ha_sensor_fan_rpm_temp_config_topic;
 String ha_sensor_comp_freq_config_topic;
 String ha_sensor_error_code_config_topic;
+String ha_sensor_manual_url_config_topic;
 String ha_sensor_energy_meter_config_topic;
 String ha_sensor_timer_mode_config_topic;
 String ha_sensor_real_target_temp_config_topic;

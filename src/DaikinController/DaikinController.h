@@ -63,6 +63,7 @@ struct HVACSettings
   const char *quiet;          // outdoor-quiet mode (protocol v2+ only)
   const char *streamer;       // mold/odor discharge (protocol v2+ only)
   const char *econo;          // outdoor power-cap (F7/D7)
+  const char *demandControl;  // compressor power-limit Off/80/70/60/40% (D7 byte 0, write-only)
   const char *ledBrightness;  // indoor display brightness High/Low/Off (F6/D6 byte 3)
   bool remoteEnable;
   // bool connected;
@@ -78,6 +79,7 @@ struct HVACStatus
   bool operating; // if true, the heatpump is operating to reach the desired temperature
   int compressorFrequency;
   String modelName;
+  String manualUrl;       // online manual URL for known models (empty if unmapped)
   String errorCode;
   uint8_t timerMode;
   float realTargetTemp;   // RX — adjusted setpoint
@@ -161,6 +163,8 @@ public:
   void setStreamerSetting(const char *setting);
   const char *getEconoSetting();
   void setEconoSetting(const char *setting);
+  const char *getDemandControlSetting();
+  void setDemandControlSetting(const char *setting);
   const char *getLEDBrightnessSetting();
   void setLEDBrightnessSetting(const char *setting);
   int getOnTimer() { return currentStatus.onTimerMinutes; }
@@ -171,6 +175,7 @@ public:
   bool getDesiredRemoteEnable() { return newSettings.remoteEnable; }
   void setSyncInterval(uint32_t ms) { _syncIntervalMs = ms; }
   String getModelName();
+  String getManualUrl();
 
   // Converter
   String daikin_climate_mode_to_string(DaikinClimateMode mode);
@@ -195,6 +200,10 @@ public:
   bool supportsQuiet()    { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
   bool supportsStreamer() { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
   bool supportsEcono()    { return !(s21SkipMask & (1ULL << S21_QUERY_F7)); };
+  // Demand control rides the same F7/D7 command (byte 0). If the unit speaks F7,
+  // it accepts the demand field — it just doesn't echo the active cap back (G7
+  // byte 0 always reads 100%), so the HA entity is optimistic/write-only.
+  bool supportsDemandControl() { return !(s21SkipMask & (1ULL << S21_QUERY_F7)); };
   // Display (LED) brightness rides F6/D6 byte 3 — only present on v2+ units that
   // return a 4-byte G6 payload. _ledBrightnessSeen latches true once the G6 parser
   // sees that 4th byte, so we don't expose the select on units that lack it.

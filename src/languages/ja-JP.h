@@ -91,6 +91,7 @@ const char txt_others_debug[] PROGMEM = "デバッグ";
 //Page Status
 const char txt_status_title[] PROGMEM = "ステータス";
 const char txt_status_hvac[] PROGMEM = "エアコン本体";
+const char txt_status_model[] PROGMEM = "モデル";
 const char txt_retries_hvac[] PROGMEM = "HVAC Connection Retries";
 const char txt_status_mqtt[] PROGMEM = "MQTT";
 const char txt_status_wifi[] PROGMEM = "WIFI RSSI";

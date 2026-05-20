@@ -59,14 +59,16 @@ const char *S21_POWERFUL_MAP[2] = {"OFF", "ON"};
 // but we lack the data to bit-decode — only the family is claimed here.
 // Add new entries as we encounter other units. The raw code is preserved in the
 // firmware log on first GC parse, so it's always recoverable.
-struct DaikinModelMap { const char *code; const char *family; };
+// manualUrl: Daikin's online manual root for this model (region-specific —
+// e.g. dit-daikin.com is Daikin Thailand). Empty when no manual is mapped.
+struct DaikinModelMap { const char *code; const char *family; const char *manualUrl; };
 const DaikinModelMap DAIKIN_KNOWN_MODELS[] = {
   // FC sits on the indoor PCB so the most likely identification is the indoor
   // unit (FTKD15ZV2S). But indoor+outdoor are factory-paired, so the same code
   // also implies the matched outdoor RKD15ZV2S. We claim the customer-facing
   // family name FTKD-ZV2S without making a BTU/capacity claim until we see
   // another capacity variant.
-  {"7B91", "FTKD-ZV2S"},
+  {"7B91", "FTKD-ZV2S", "https://web-manual.dit-daikin.com/ra/3P730851-16/en/"},
 };
 
 // F6/D6 special-mode bit layout (FTKD-zv2s v2 — verified by remote-button probe):
@@ -85,6 +87,14 @@ const char *S21_STREAMER_MAP[2] = {"OFF", "ON"};
 //   byte 1 bit 1 (0x02): econo
 const byte S21_ECONO[2]   = {0x00, 0x02};
 const char *S21_ECONO_MAP[2]   = {"OFF", "ON"};
+
+// D7 byte 0 — demand control (compressor power limit). byte 0 = '0' + (100 - percent),
+// so the offset table below is (100 - percent). Verified on FTKD-zv2s (DAIKIN_GUESTROOM,
+// 2026-05-20): writing 40% capped the compressor at 40Hz vs 48Hz uncapped, reversibly.
+// The unit does NOT echo the active cap (G7 byte 0 always reads 100%), so this is
+// write-only — never decoded back from F7; HA entity state is optimistic/local.
+const byte S21_DEMAND[5]      = {0, 20, 30, 40, 60};
+const char *S21_DEMAND_MAP[5] = {"Off", "80%", "70%", "60%", "40%"};
 
 // F6/D6 byte 3 — indoor-unit display (LED) brightness. 2-bit field, mask 0x0C.
 // Probed on FTKD-zv2s (DAIKIN_GUESTROOM, 2026-05-20) by cycling the remote's
@@ -539,10 +549,12 @@ bool DaikinController::parseResponse(ACResponse *response)
         // Translate the raw 4-char FC code to a friendly family name if we know
         // it; fall back to the raw code so unknown units still show something.
         const char *friendly = model;
+        const char *manualUrl = "";
         for (auto &m : DAIKIN_KNOWN_MODELS) {
-          if (strcmp(model, m.code) == 0) { friendly = m.family; break; }
+          if (strcmp(model, m.code) == 0) { friendly = m.family; manualUrl = m.manualUrl; break; }
         }
         this->currentStatus.modelName = String(friendly);
+        this->currentStatus.manualUrl = String(manualUrl);
         Log.ln(TAG, "GC Model: raw=%s friendly=%s (%d bytes)", model, friendly, payloadSize);
         s21SkipMask |= (1ULL << S21_QUERY_FC);
         return true;
@@ -1271,6 +1283,11 @@ void DaikinController::setStatusChangedCallback(STATUS_CHANGED_CALLBACK_SIGNATUR
 String DaikinController::getModelName()
 {
   return this->currentStatus.modelName;
+}
+
+String DaikinController::getManualUrl()
+{
+  return this->currentStatus.manualUrl;
 }
 
 const char *DaikinController::getPowerfulSetting(){

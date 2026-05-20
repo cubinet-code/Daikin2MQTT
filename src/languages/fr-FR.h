@@ -91,6 +91,7 @@ const char txt_others_debug[] PROGMEM = "Debug";
 //Page Status
 const char txt_status_title[] PROGMEM = "Etats";
 const char txt_status_hvac[] PROGMEM = "Etat HVAC";
+const char txt_status_model[] PROGMEM = "Modèle";
 const char txt_retries_hvac[] PROGMEM = "HVAC Connection Retries";
 const char txt_status_mqtt[] PROGMEM = "Etat MQTT";
 const char txt_status_wifi[] PROGMEM = "WIFI RSSI";

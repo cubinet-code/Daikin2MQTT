@@ -1094,6 +1094,7 @@ void handleStatus()
   statusPage.replace("_TXT_BACK_", FPSTR(txt_back));
   statusPage.replace("_TXT_STATUS_TITLE_", FPSTR(txt_status_title));
   statusPage.replace("_TXT_STATUS_HVAC_", FPSTR(txt_status_hvac));
+  statusPage.replace("_TXT_STATUS_MODEL_", FPSTR(txt_status_model));
   statusPage.replace("_TXT_STATUS_MQTT_", FPSTR(txt_status_mqtt));
   statusPage.replace("_TXT_STATUS_WIFI_", FPSTR(txt_status_wifi));
   statusPage.replace("_TXT_RETRIES_HVAC_", FPSTR(txt_retries_hvac));
@@ -1125,6 +1126,18 @@ void handleStatus()
     statusPage.replace(F("_MQTT_STATUS_"), connected);
   else
     statusPage.replace(F("_MQTT_STATUS_"), disconnected);
+  String modelCell = ac.getModelName();
+  if (modelCell.isEmpty())
+    modelCell = F("&mdash;");
+  String manualUrl = ac.getManualUrl();
+  if (!manualUrl.isEmpty())
+  {
+    modelCell += F(" <a href='");
+    modelCell += manualUrl;
+    modelCell += F("' target='_blank' rel='noopener'>Manual</a>");
+  }
+  statusPage.replace(F("_HVAC_MODEL_"), modelCell);
+
   statusPage.replace(F("_HVAC_RETRIES_"), String(hpConnectionTotalRetries));
   statusPage.replace(F("_MQTT_REASON_"), String(mqtt_client.state()));
   statusPage.replace(F("_WIFI_STATUS_"), String(WiFi.RSSI()));
@@ -1654,6 +1667,7 @@ void populateRootInfo(const HVACSettings &settings, const HVACStatus &status, bo
     rootInfo["action"] = hpGetAction(status, settings);
     rootInfo["compressorFrequency"] = status.compressorFrequency;
     rootInfo["errorCode"] = status.errorCode;
+    rootInfo["manualUrl"] = ac.getManualUrl();
     rootInfo["timerMode"] = status.timerMode == 0 ? "OFF" :
                             status.timerMode == 1 ? "ON_TIMER" :
                             status.timerMode == 2 ? "OFF_TIMER" : "BOTH";
@@ -2478,6 +2492,10 @@ void haConfig()
     publishMQTTSensorConfig("Compressor Frequency", "_comp_freq", HA_sine_wave_icon, "Hz", NULL, ha_state_topic, jsonValueTemplate("compressorFrequency"), ha_sensor_comp_freq_config_topic, "", "measurement");
   }
   publishMQTTSensorConfig("Error Code", "_error_code", HA_alert, NULL, NULL, ha_state_topic, jsonValueTemplate("errorCode"), ha_sensor_error_code_config_topic, "diagnostic");
+  // Manual link — only exposed for models with a mapped URL (skipped at connect-time
+  // before the model is read; published once the FC model query has resolved).
+  if (!ac.getManualUrl().isEmpty())
+    publishMQTTSensorConfig("Manual", "_manual_url", "mdi:book-open-variant", NULL, NULL, ha_state_topic, jsonValueTemplate("manualUrl"), ha_sensor_manual_url_config_topic, "diagnostic");
   publishMQTTSensorConfig("Timer", "_timer_mode", "mdi:timer-outline", NULL, NULL, ha_state_topic, jsonValueTemplate("timerMode"), ha_sensor_timer_mode_config_topic);
 
   if (proto == PROTOCOL_S21 && ac.supportsEnergyMeter()){
@@ -3105,6 +3123,7 @@ void setup()
         ha_sensor_comp_freq_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/comp_freq/config";
         ha_sensor_energy_meter_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/energy_meter/config";
         ha_sensor_error_code_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/error_code/config";
+        ha_sensor_manual_url_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/manual_url/config";
         ha_sensor_timer_mode_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/timer_mode/config";
         ha_sensor_real_target_temp_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/real_target_temp/config";
         ha_sensor_louver_angle_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/louver_angle/config";
