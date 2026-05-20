@@ -86,6 +86,14 @@ const char *S21_STREAMER_MAP[2] = {"OFF", "ON"};
 const byte S21_ECONO[2]   = {0x00, 0x02};
 const char *S21_ECONO_MAP[2]   = {"OFF", "ON"};
 
+// F6/D6 byte 3 — indoor-unit display (LED) brightness. 2-bit field, mask 0x0C.
+// Probed on FTKD-zv2s (DAIKIN_GUESTROOM, 2026-05-20) by cycling the remote's
+// MENU brightness menu: High=0x30 (no bits), Low=0x38 (bit 3), Off=0x3C (bits 2+3).
+// Polarity is inverted vs the Faikin simulator (more bits = dimmer). The byte is
+// the usual ASCII-offset form ('0' + bits); we match on the raw field (payload & 0x0C).
+const byte S21_LED[3]      = {0x00, 0x08, 0x0C};
+const char *S21_LED_MAP[3] = {"High", "Low", "Off"};
+
 int16_t bytes_to_num(uint8_t *bytes, size_t len)
 {
   // <ones><tens><hundreds><neg/pos>
@@ -452,17 +460,28 @@ bool DaikinController::parseResponse(ACResponse *response)
           syncNewSettings();
         return true;
 
-      case '6': // F6 -> G6 -- Powerful / comfort / quiet / streamer
+      case '6': // F6 -> G6 -- Powerful / comfort / quiet / streamer / display brightness
         // Byte layout (validated on FTKD-zv2s v2 via remote-button probe rounds):
         //   byte 0 bit 1 (0x02) = powerful (legacy v0/v1; RzB2 authoritative on v2)
         //   byte 0 bit 6 (0x40) = comfort airflow (redirects louver to ceiling)
         //   byte 0 bit 7 (0x80) = quiet (outdoor unit quiet mode)
         //   byte 1 bit 7 (0x80) = streamer (mold/odor prevention discharge)
+        //   byte 3 bits 2+3 (0x0C) = display brightness: High=0x00, Low=0x08, Off=0x0C
         this->currentSettings.powerful = (payload[0] & 0x02) ? S21_POWERFUL_MAP[1] : S21_POWERFUL_MAP[0];
         this->currentSettings.comfort  = (payload[0] & 0x40) ? S21_COMFORT_MAP[1]  : S21_COMFORT_MAP[0];
         this->currentSettings.quiet    = (payload[0] & 0x80) ? S21_QUIET_MAP[1]    : S21_QUIET_MAP[0];
         if (payloadSize > 1)
           this->currentSettings.streamer = (payload[1] & 0x80) ? S21_STREAMER_MAP[1] : S21_STREAMER_MAP[0];
+        if (payloadSize > 3) {
+          const char *led = lookupByteMapValue(S21_LED_MAP, S21_LED, 3, payload[3] & 0x0C);
+          this->currentSettings.ledBrightness = led;
+          // Keep the write-staging copy in sync with the unit unless a brightness
+          // change is already queued — otherwise an unrelated special-mode write
+          // (streamer/powerful/…) would re-send a stale brightness and clobber it.
+          if (!pendingSettings.specialMode)
+            this->newSettings.ledBrightness = led;
+          if (!_ledBrightnessSeen) { _ledBrightnessSeen = true; _rediscoverNeeded = true; }
+        }
         return true;
 
 
@@ -970,7 +989,10 @@ bool DaikinController::update(bool updateAll)
         payload[0] = b0;
         payload[1] = b1;
         payload[2] = '0';
-        payload[3] = '0';
+        // byte 3 = display brightness. Always written from the staged setting (kept
+        // in sync with the unit by the G6 parser) so toggling any special mode
+        // preserves the user's brightness instead of forcing it back to High.
+        payload[3] = '0' + S21_LED[lookupByteMapIndex(S21_LED_MAP, 3, newSettings.ledBrightness)];
         sent = daikinUART->sendCommandS21('D', '6', payload, 4);
         if (!sent) Log.ln(TAG, "D6 failed, will try D3 fallback");
       }
@@ -998,6 +1020,7 @@ bool DaikinController::update(bool updateAll)
         currentSettings.comfort  = newSettings.comfort;
         currentSettings.quiet    = newSettings.quiet;
         currentSettings.streamer = newSettings.streamer;
+        currentSettings.ledBrightness = newSettings.ledBrightness;
       }
       res = res & sent;
       pendingSettings.specialMode = false;
@@ -1287,6 +1310,13 @@ void DaikinController::setStreamerSetting(const char *setting){
 void DaikinController::setEconoSetting(const char *setting){
   if (daikinUART->currentProtocol() == PROTOCOL_S21) {
     if (assignMapped(newSettings.econo, S21_ECONO_MAP, 2, setting)) pendingSettings.specialMode = true;
+  }
+}
+
+const char *DaikinController::getLEDBrightnessSetting(){ return currentSettings.ledBrightness; }
+void DaikinController::setLEDBrightnessSetting(const char *setting){
+  if (daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (assignMapped(newSettings.ledBrightness, S21_LED_MAP, 3, setting)) pendingSettings.specialMode = true;
   }
 }
 

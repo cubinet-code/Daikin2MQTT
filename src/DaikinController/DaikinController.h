@@ -63,6 +63,7 @@ struct HVACSettings
   const char *quiet;          // outdoor-quiet mode (protocol v2+ only)
   const char *streamer;       // mold/odor discharge (protocol v2+ only)
   const char *econo;          // outdoor power-cap (F7/D7)
+  const char *ledBrightness;  // indoor display brightness High/Low/Off (F6/D6 byte 3)
   bool remoteEnable;
   // bool connected;
 };
@@ -160,6 +161,8 @@ public:
   void setStreamerSetting(const char *setting);
   const char *getEconoSetting();
   void setEconoSetting(const char *setting);
+  const char *getLEDBrightnessSetting();
+  void setLEDBrightnessSetting(const char *setting);
   int getOnTimer() { return currentStatus.onTimerMinutes; }
   int getOffTimer() { return currentStatus.offTimerMinutes; }
   void setOnTimer(int minutes);
@@ -192,6 +195,10 @@ public:
   bool supportsQuiet()    { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
   bool supportsStreamer() { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)); };
   bool supportsEcono()    { return !(s21SkipMask & (1ULL << S21_QUERY_F7)); };
+  // Display (LED) brightness rides F6/D6 byte 3 — only present on v2+ units that
+  // return a 4-byte G6 payload. _ledBrightnessSeen latches true once the G6 parser
+  // sees that 4th byte, so we don't expose the select on units that lack it.
+  bool supportsLEDBrightness() { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)) && _ledBrightnessSeen; };
   bool supportsVerticalSwing() { return _supportsVerticalSwing; };  // from F2 capability flags
   bool supportsHorizontalSwing() { return _supportsHorizontalSwing; }; // from F2 capability flags
   bool supportsEnergyMeter() { return !(s21SkipMask & (1ULL << S21_QUERY_FM)); };
@@ -233,8 +240,8 @@ private:
   HardwareSerial *_serial{nullptr};
 
   HVACStatus currentStatus{0, 0, 0, 0, 0, 0};
-  HVACSettings currentSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", "OFF", "OFF", "OFF", true};
-  HVACSettings newSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", "OFF", "OFF", "OFF", true};
+  HVACSettings currentSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", "OFF", "OFF", "OFF", "High", true};
+  HVACSettings newSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", "OFF", "OFF", "OFF", "High", true};
   DiagSensors _diag{};
 
   // Temporary setting value.
@@ -294,6 +301,11 @@ private:
   bool _outsideTempChanged = false;
   float _firstOutsideTemp = -999;
   bool _rediscoverNeeded = false;
+
+  // Latched true once a G6 response carries a 4th payload byte (the display
+  // brightness field). Gates supportsLEDBrightness() so units with a shorter
+  // G6 payload don't get a non-functional select.
+  bool _ledBrightnessSeen = false;
 
   // Copy currentSettings → newSettings, preserving fields S21 doesn't report back.
   void syncNewSettings() {

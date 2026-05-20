@@ -1644,6 +1644,7 @@ void populateRootInfo(const HVACSettings &settings, const HVACStatus &status, bo
   rootInfo["quiet"] = settings.quiet;
   rootInfo["streamer"] = settings.streamer;
   rootInfo["econo"] = settings.econo;
+  rootInfo["ledBrightness"] = settings.ledBrightness;
 
   if (fullStatus) {
     rootInfo["roomTemperature"] = convertCelsiusToLocalUnit(status.roomTemperature + inside_temp_offset, useFahrenheit);
@@ -2110,6 +2111,13 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
       playBeep(SET); ac.update(); publishHpState();
     }
   }
+  else if (strcmp(topic, ha_select_led_brightness_set_topic.c_str()) == 0)
+  {
+    if (strcasecmp(message, ac.getLEDBrightnessSetting()) != 0) {
+      ac.setLEDBrightnessSetting(message);
+      playBeep(SET); ac.update(); publishHpState();
+    }
+  }
   else if (strcmp(topic, ha_number_on_timer_set_topic.c_str()) == 0)
   {
     int minutes = atoi(message);
@@ -2521,8 +2529,10 @@ void haConfig()
       ha_wideVane_set_topic, wideVaneOpts, 2, ha_select_vane_horizontal_config_topic);
   }
 
-  // LED Switch config
-  publishMQTTSwitchConfig("LED", "_unit_led", HA_led,
+  // Controller LED switch config — this is the ESP module's own status LED (GPIO 5),
+  // NOT the A/C unit's lamps. The indoor unit's lamp brightness is the separate
+  // "Indoor LED Brightness" select below. unique_id kept as _unit_led for HA history.
+  publishMQTTSwitchConfig("Controller LED", "_unit_led", HA_led,
     ha_switch_unit_led_set_topic, ha_unit_settings_topic,
     F("{{ value_json.led if (value_json is defined and value_json.led is defined and value_json.led|length) else 'ON' }}"),
     ha_switch_unit_led_config_topic, "config");
@@ -2565,6 +2575,15 @@ void haConfig()
       ha_switch_econo_set_topic, ha_state_topic,
       F("{{ value_json.econo if (value_json is defined and value_json.econo is defined and value_json.econo|length) else 'OFF' }}"),
       ha_switch_econo_config_topic);
+  }
+
+  // Indoor LED Brightness select — indoor-unit lamp brightness (F6/D6 byte 3). v2+ only.
+  if (proto == PROTOCOL_S21 && ac.supportsLEDBrightness()){
+    const char* ledOpts[] = {"High", "Low", "Off"};
+    publishMQTTSelectConfig("Indoor LED Brightness", "_led_brightness", HA_led_brightness,
+      ha_state_topic,
+      F("{{ value_json.ledBrightness if (value_json is defined and value_json.ledBrightness is defined and value_json.ledBrightness|length) else 'High' }}"),
+      ha_select_led_brightness_set_topic, ledOpts, 3, ha_select_led_brightness_config_topic);
   }
 
   // Decoded protocol-v2 telemetry from RK/Rb (no v0 fallback — won't appear if FK absent).
@@ -2662,6 +2681,7 @@ void mqttConnect()
       mqtt_client.subscribe(ha_switch_quiet_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_streamer_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_econo_set_topic.c_str());
+      mqtt_client.subscribe(ha_select_led_brightness_set_topic.c_str());
       mqtt_client.subscribe(ha_number_on_timer_set_topic.c_str());
       mqtt_client.subscribe(ha_number_off_timer_set_topic.c_str());
       mqtt_client.subscribe(ha_preset_mode_set_topic.c_str());
@@ -3069,6 +3089,7 @@ void setup()
       ha_switch_quiet_set_topic = mqtt_topic + "/" + mqtt_fn + "/quiet/set";
       ha_switch_streamer_set_topic = mqtt_topic + "/" + mqtt_fn + "/streamer/set";
       ha_switch_econo_set_topic = mqtt_topic + "/" + mqtt_fn + "/econo/set";
+      ha_select_led_brightness_set_topic = mqtt_topic + "/" + mqtt_fn + "/led_brightness/set";
       ha_number_on_timer_set_topic = mqtt_topic + "/" + mqtt_fn + "/on_timer/set";
       ha_number_off_timer_set_topic = mqtt_topic + "/" + mqtt_fn + "/off_timer/set";
       ha_preset_mode_set_topic = mqtt_topic + "/" + mqtt_fn + "/preset/set";
@@ -3093,6 +3114,7 @@ void setup()
         ha_number_off_timer_config_topic = others_haa_topic + "/number/" + mqtt_fn + "/off_timer/config";
         ha_select_vane_vertical_config_topic = others_haa_topic + "/select/" + mqtt_fn + "/vane_vertical/config";
         ha_select_vane_horizontal_config_topic = others_haa_topic + "/select/" + mqtt_fn + "/vane_horizontal/config";
+        ha_select_led_brightness_config_topic = others_haa_topic + "/select/" + mqtt_fn + "/led_brightness/config";
         ha_switch_unit_led_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/led/config";
         ha_switch_unit_beep_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/beep/config";
         ha_switch_powerful_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/powerful/config";

@@ -58,7 +58,8 @@ const PROGMEM char* HA_turbine_icon = "mdi:turbine";
 const PROGMEM char* HA_sine_wave_icon = "mdi:sine-wave";
 const PROGMEM char* HA_vane_vertical_icon = "mdi:arrow-up-down";
 const PROGMEM char* HA_vane_horizontal_icon = "mdi:arrow-left-right";
-const PROGMEM char* HA_led = "mdi:wall-sconce-flat-variant";
+const PROGMEM char* HA_led = "mdi:led-on";  // ESP module status LED (GPIO 5)
+const PROGMEM char* HA_led_brightness = "mdi:brightness-6";  // indoor unit LED lamps
 const PROGMEM char* HA_beep = "mdi:volume-high";
 const PROGMEM char* HA_counter = "mdi:counter";
 const PROGMEM char* HA_alert = "mdi:alert-circle";
@@ -110,6 +111,7 @@ String ha_number_on_timer_set_topic;
 String ha_number_off_timer_set_topic;
 String ha_select_vane_vertical_config_topic;
 String ha_select_vane_horizontal_config_topic;
+String ha_select_led_brightness_config_topic;
 String ha_switch_unit_led_config_topic;
 String ha_switch_unit_beep_config_topic;
 String ha_switch_powerful_config_topic;
@@ -127,6 +129,7 @@ String ha_recv_s21exp;
 String ha_diag_topic;
 String ha_availability_topic;
 String ha_switch_unit_led_set_topic;
+String ha_select_led_brightness_set_topic;
 String ha_switch_unit_beep_set_topic;
 String ha_switch_powerful_set_topic;
 String ha_switch_comfort_set_topic;
