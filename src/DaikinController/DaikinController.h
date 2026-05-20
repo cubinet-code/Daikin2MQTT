@@ -85,8 +85,9 @@ struct HVACStatus
   int offTimerMinutes;    // RE — OFF timer (minutes)
   int targetFanRPM;       // RK — indoor fan target RPM (validated 2026-05-20)
   int loadSignal;         // Rb — compressor load (per Faikout; not user-validated)
-  int humidity;           // Re — humidity SETPOINT, not measurement (returns const 50 on
-                          // FTKD-zv2s; true measurement command not yet identified)
+  int humidity;           // Re or F9.b2 — relative humidity %. Only populated
+                          // when a real sensor is detected (Re != "050" placeholder
+                          // and F9.b2 != 0xFF). FTKD15ZV2S has no sensor.
 };
 
 // Raw payloads of S21 commands whose semantics aren't yet decoded.
@@ -196,7 +197,10 @@ public:
   bool supportsLouverAngle() { return !(s21SkipMask & (1ULL << S21_QUERY_RN)); };
   bool supportsOnTimer() { return !(s21SkipMask & (1ULL << S21_QUERY_RD)); };
   bool supportsOffTimer() { return !(s21SkipMask & (1ULL << S21_QUERY_RE)); };
-  bool supportsHumidity() { return !(s21SkipMask & (1ULL << S21_QUERY_Re)); };
+  // Humidity exposure is gated on detecting a real sensor reading: Re returning
+  // != "050" (Faikout's documented "no sensor" value), or F9 byte 2 != 0xFF.
+  // FTKD15ZV2S has neither — entity correctly hidden.
+  bool supportsHumidity() { return _humiditySensorPresent; };
 
   // Runtime rediscovery — when a new capability is detected after initial haConfig(),
   // this flag triggers republishing HA discovery so the new entity appears without reboot.
@@ -260,6 +264,10 @@ private:
   bool _hasPowerful = false;
   bool _hasEcono    = false;
   bool _hasStreamer = false;
+
+  // Latched true when the controller sees a humidity reading that isn't the
+  // Faikout-documented "no sensor" placeholder. Drives supportsHumidity().
+  bool _humiditySensorPresent = false;
 
   // Protocol version from G8 (0 = unknown/v0, 2 = v2+ FTKD-zv2s class).
   // Read once per connection in G8 parser; used by supportsComfort() to gate

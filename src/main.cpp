@@ -1662,7 +1662,8 @@ void populateRootInfo(const HVACSettings &settings, const HVACStatus &status, bo
     rootInfo["offTimerMinutes"] = status.offTimerMinutes;
     rootInfo["targetFanRPM"] = status.targetFanRPM;
     rootInfo["loadSignal"]   = status.loadSignal;
-    rootInfo["humiditySetpoint"] = status.humidity;  // Re — actually the setpoint, not the measurement
+    // humidity only present when a real sensor was detected (see supportsHumidity).
+    if (ac.supportsHumidity()) rootInfo["humidity"] = status.humidity;
     rootInfo["uptime"] = millis() / 1000;
   }
 }
@@ -2525,16 +2526,13 @@ void haConfig()
     publishMQTTSensorConfig("Compressor Load (Rb)", "_load_signal", "mdi:gauge", NULL, NULL,
       ha_state_topic, jsonValueTemplate("loadSignal"),
       diagPrefix + "load_signal/config", "diagnostic");
-    // Re returns a constant 50 on FTKD-zv2s while an external reference sensor
-    // showed real humidity climbing 49→61%. Conclusion: Re is the humidity
-    // SETPOINT (for the remote's Humidity-control mode), not the measurement.
-    // Exposed as diagnostic + no device_class so HA won't treat it as a measurement.
-    // True humidity-sensor command on this model is still unknown.
+    // Humidity is published only when a real sensor is detected (Re != "050"
+    // placeholder, or F9.b2 != 0xFF). FTKD15ZV2S has no sensor — entity hidden.
     if (ac.supportsHumidity()) {
-      publishMQTTSensorConfig("Humidity Setpoint (Re)", "_humidity_setpoint", "mdi:water-percent",
-        "%", NULL,
-        ha_state_topic, jsonValueTemplate("humiditySetpoint"),
-        diagPrefix + "humidity_setpoint/config", "diagnostic");
+      publishMQTTSensorConfig("Humidity", "_humidity", "mdi:water-percent",
+        "%", "humidity",
+        ha_state_topic, jsonValueTemplate("humidity"),
+        diagPrefix + "humidity/config");
     }
 
     // Raw S21 payloads we don't fully understand yet — exposed for graphing.

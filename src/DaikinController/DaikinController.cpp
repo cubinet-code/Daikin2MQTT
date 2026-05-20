@@ -477,11 +477,17 @@ bool DaikinController::parseResponse(ACResponse *response)
         return true;
       }
 
-      case '9': // F9 -> G9 -- Coarse temperatures (diagnostic only, RH/Ra are higher resolution)
+      case '9': // F9 -> G9 -- byte 0 = coarse room temp, byte 2 = humidity (Faikout)
+      // RH/Ra give higher-res temps so we ignore byte 0 here.
+      // byte 2 humidity encoding: 0x30 + (humidity/5); 0xFF = sensor unsupported.
+      // FTKD15ZV2S returns 0xFF — no humidity sensor on this SKU. The Re/Se
+      // command on this same SKU returns "050" which is Faikout's documented
+      // "no humidity sensor" placeholder — consistent with F9 byte 2.
       {
-        float f9Room = (float)((signed)payload[0] - 0x80) / 2;
-        float f9Outside = (float)((signed)payload[1] - 0x80) / 2;
-        Log.ln(TAG, "F9 coarse temps - Room: %.1f Outside: %.1f", f9Room, f9Outside);
+        if (payloadSize > 2 && payload[2] != 0xFF) {
+          this->currentStatus.humidity = (payload[2] - 0x30) * 5;
+          _humiditySensorPresent = true;
+        }
         return true;
       }
 
@@ -620,13 +626,18 @@ bool DaikinController::parseResponse(ACResponse *response)
         }
         return true;
       }
-      case 'e': // Re -> Se -- Humidity setpoint (NOT measurement)
-      // On FTKD-zv2s this returns a constant 50 while real room humidity varies
-      // 49-61% per an external sensor. Hypothesis: Re reflects the target value
-      // used by the remote's Humidity-control mode. The actual humidity sensor
-      // command on this unit is still unidentified.
+      case 'e': // Re -> Se -- Humidity reading (Faikout: payload is decimal in
+      // reverse ASCII order, e.g. "970" = 79% RH; "050" = sensor not present).
+      // On FTKD15ZV2S both units return "050" so the sensor is absent. Only
+      // store when the reading is plausibly non-placeholder. The humidity field
+      // is only exposed to HA when _humiditySensorPresent latches true (either
+      // via this command or F9 byte 2).
       {
-        this->currentStatus.humidity = bytes_to_num(&payload[0], payloadSize);
+        int raw = bytes_to_num(&payload[0], payloadSize);
+        if (raw != 0 && raw != 50) {  // 50 is Faikout's documented "no sensor" placeholder
+          this->currentStatus.humidity = raw;
+          _humiditySensorPresent = true;
+        }
         return true;
       }
       case 'G':
