@@ -4,7 +4,7 @@
 CLAUDE.md
 .mcp.json
 experiment/
-bin releases/firmware.bin
+releases/*.bin
 .env
 .fu04-baseline.txt
 docs

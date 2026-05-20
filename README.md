@@ -108,12 +108,12 @@ pio run -e wifikit-serial-esp32-s3 --target upload
 pio device monitor
 ```
 
-The built firmware is automatically copied to `bin releases/` with a versioned filename.
+The built firmware is automatically copied to `releases/` with a versioned filename.
 
 ### OTA Update
 
 1. Open `http://<device-ip>/upgrade` in a browser
-2. Upload the `.bin` file from `bin releases/`
+2. Upload the `.bin` file from `releases/`
 3. Device restarts automatically
 
 ## Hardware
