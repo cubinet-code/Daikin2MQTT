@@ -35,6 +35,11 @@ FTKD behavior is unchanged.
   hardware and the protocol can't distinguish it from FTKQ. Power Limit / demand control is
   unchanged — it works on FTKQ (compressor frequency responds).
 
+### Documentation
+- The **S21 protocol reference** (`docs/S21_PROTOCOL_REFERENCE.md`) is now tracked in the repo —
+  the authoritative map of the S21 read/write surface across FTKD/FTKC/FTKQ (command matrix,
+  cross-model comparison, decoded special modes, and dead ends).
+
 ## [1.4-b5] - 2026-05-20
 
 A diagnostics overhaul following the full S21 read-surface mapping: drop the
