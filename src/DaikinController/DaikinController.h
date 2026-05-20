@@ -160,6 +160,10 @@ public:
   void setStreamerSetting(const char *setting);
   const char *getEconoSetting();
   void setEconoSetting(const char *setting);
+  int getOnTimer() { return currentStatus.onTimerMinutes; }
+  int getOffTimer() { return currentStatus.offTimerMinutes; }
+  void setOnTimer(int minutes);
+  void setOffTimer(int minutes);
   void setEnableRemote(bool enable);
   bool getDesiredRemoteEnable() { return newSettings.remoteEnable; }
   void setSyncInterval(uint32_t ms) { _syncIntervalMs = ms; }
@@ -222,7 +226,8 @@ private:
     bool vane;
     bool specialMode;
     bool ACconfig;
-    bool hasPending() const { return basic || vane || specialMode || ACconfig; }
+    bool timer;
+    bool hasPending() const { return basic || vane || specialMode || ACconfig || timer; }
   };
 
   HardwareSerial *_serial{nullptr};
@@ -233,7 +238,12 @@ private:
   DiagSensors _diag{};
 
   // Temporary setting value.
-  PendingSettings pendingSettings = {false, false, false, false};
+  PendingSettings pendingSettings = {false, false, false, false, false};
+
+  // Desired timer values (minutes) staged for the next D3 write. -1 = no change
+  // pending (preserve the AC's current value for that timer).
+  int _desiredOnTimer = -1;
+  int _desiredOffTimer = -1;
 
   unsigned long lastSyncMs = 0;
   uint32_t _syncIntervalMs = SYNC_INTERVAL_DEFAULT_MS;

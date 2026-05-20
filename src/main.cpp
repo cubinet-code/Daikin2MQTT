@@ -2110,6 +2110,22 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
       playBeep(SET); ac.update(); publishHpState();
     }
   }
+  else if (strcmp(topic, ha_number_on_timer_set_topic.c_str()) == 0)
+  {
+    int minutes = atoi(message);
+    if (minutes != ac.getOnTimer()) {
+      ac.setOnTimer(minutes);
+      playBeep(SET); ac.update(); publishHpState();
+    }
+  }
+  else if (strcmp(topic, ha_number_off_timer_set_topic.c_str()) == 0)
+  {
+    int minutes = atoi(message);
+    if (minutes != ac.getOffTimer()) {
+      ac.setOffTimer(minutes);
+      playBeep(SET); ac.update(); publishHpState();
+    }
+  }
   else if (strcmp(topic, ha_preset_mode_set_topic.c_str()) == 0)
   {
     // HA presets are mutually exclusive; map them to the two switches so only one is ON.
@@ -2263,6 +2279,30 @@ void publishMQTTSelectConfig(const char *name, const char *id, const char *icon,
     haSelectConfig["payload_available"] = mqtt_payload_available;
   }
   publishMQTTDiscovery(haSelectConfig, topic);
+}
+
+void publishMQTTNumberConfig(const char *name, const char *id, const char *icon,
+  String commandTopic, String stateTopic, String valueTemplate, String topic,
+  int minVal, int maxVal, int step, const char *unit)
+{
+  JsonDocument haNumberConfig;
+  haNumberConfig["name"] = name;
+  haNumberConfig["unique_id"] = getId() + id;
+  haNumberConfig["icon"] = icon;
+  haNumberConfig["command_topic"] = commandTopic;
+  haNumberConfig["state_topic"] = stateTopic;
+  haNumberConfig["value_template"] = valueTemplate;
+  haNumberConfig["min"] = minVal;
+  haNumberConfig["max"] = maxVal;
+  haNumberConfig["step"] = step;
+  haNumberConfig["mode"] = "box";
+  haNumberConfig["unit_of_measurement"] = unit;
+  if (others_avail_report) {
+    haNumberConfig["availability_topic"] = ha_availability_topic;
+    haNumberConfig["payload_not_available"] = mqtt_payload_unavailable;
+    haNumberConfig["payload_available"] = mqtt_payload_available;
+  }
+  publishMQTTDiscovery(haNumberConfig, topic);
 }
 
 // haConfig() — Publishes HA MQTT Discovery config for all entities.
@@ -2439,12 +2479,21 @@ void haConfig()
     publishMQTTSensorConfig("Louver Angle", "_louver_angle", HA_vane_vertical_icon, "°", NULL, ha_state_topic, jsonValueTemplate("louverAngle"), ha_sensor_louver_angle_config_topic, "diagnostic");
   }
 
+  // Timers as writable number entities (no entity_category → land in Controls,
+  // not Diagnostic). 0 = disabled, step 10 min, max 24 h. Clear the old
+  // diagnostic *sensor* discovery (retained from prior firmware) so HA drops it.
   if (ac.supportsOnTimer()) {
-    publishMQTTSensorConfig("ON Timer", "_on_timer", "mdi:timer-outline", "min", NULL, ha_state_topic, jsonValueTemplate("onTimerMinutes"), ha_sensor_on_timer_config_topic, "diagnostic");
+    if (others_haa) mqtt_client.publish(ha_sensor_on_timer_config_topic.c_str(), "", true);
+    publishMQTTNumberConfig("ON Timer", "_on_timer", "mdi:timer-outline",
+      ha_number_on_timer_set_topic, ha_state_topic, jsonValueTemplate("onTimerMinutes"),
+      ha_number_on_timer_config_topic, 0, 720, 10, "min");
   }
 
   if (ac.supportsOffTimer()) {
-    publishMQTTSensorConfig("OFF Timer", "_off_timer", "mdi:timer-off-outline", "min", NULL, ha_state_topic, jsonValueTemplate("offTimerMinutes"), ha_sensor_off_timer_config_topic, "diagnostic");
+    if (others_haa) mqtt_client.publish(ha_sensor_off_timer_config_topic.c_str(), "", true);
+    publishMQTTNumberConfig("OFF Timer", "_off_timer", "mdi:timer-off-outline",
+      ha_number_off_timer_set_topic, ha_state_topic, jsonValueTemplate("offTimerMinutes"),
+      ha_number_off_timer_config_topic, 0, 720, 10, "min");
   }
 
   // Vane vertical config — only if supported
@@ -2608,6 +2657,8 @@ void mqttConnect()
       mqtt_client.subscribe(ha_switch_quiet_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_streamer_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_econo_set_topic.c_str());
+      mqtt_client.subscribe(ha_number_on_timer_set_topic.c_str());
+      mqtt_client.subscribe(ha_number_off_timer_set_topic.c_str());
       mqtt_client.subscribe(ha_preset_mode_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_remote_enable_set_topic.c_str());
       mqtt_client.publish(ha_availability_topic.c_str(), !_debugMode ? mqtt_payload_available : mqtt_payload_unavailable, true); // publish status as available
@@ -3013,6 +3064,8 @@ void setup()
       ha_switch_quiet_set_topic = mqtt_topic + "/" + mqtt_fn + "/quiet/set";
       ha_switch_streamer_set_topic = mqtt_topic + "/" + mqtt_fn + "/streamer/set";
       ha_switch_econo_set_topic = mqtt_topic + "/" + mqtt_fn + "/econo/set";
+      ha_number_on_timer_set_topic = mqtt_topic + "/" + mqtt_fn + "/on_timer/set";
+      ha_number_off_timer_set_topic = mqtt_topic + "/" + mqtt_fn + "/off_timer/set";
       ha_preset_mode_set_topic = mqtt_topic + "/" + mqtt_fn + "/preset/set";
       ha_switch_remote_enable_set_topic =  mqtt_topic + "/" + mqtt_fn + "/remote_enable/set";
 
@@ -3031,6 +3084,8 @@ void setup()
         ha_sensor_louver_angle_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/louver_angle/config";
         ha_sensor_on_timer_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/on_timer/config";
         ha_sensor_off_timer_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/off_timer/config";
+        ha_number_on_timer_config_topic = others_haa_topic + "/number/" + mqtt_fn + "/on_timer/config";
+        ha_number_off_timer_config_topic = others_haa_topic + "/number/" + mqtt_fn + "/off_timer/config";
         ha_select_vane_vertical_config_topic = others_haa_topic + "/select/" + mqtt_fn + "/vane_vertical/config";
         ha_select_vane_horizontal_config_topic = others_haa_topic + "/select/" + mqtt_fn + "/vane_horizontal/config";
         ha_switch_unit_led_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/led/config";

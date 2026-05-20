@@ -6,3 +6,4 @@ experiment/
 bin releases/firmware.bin
 .env
 .fu04-baseline.txt
+docs

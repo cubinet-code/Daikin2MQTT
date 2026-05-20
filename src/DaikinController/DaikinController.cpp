@@ -417,8 +417,15 @@ bool DaikinController::parseResponse(ACResponse *response)
         s21SkipMask |= (1ULL << S21_QUERY_F2);
         return true;
 
-      case '3': // F3 -> G3 -- Timer and powerful status (when F6 unsupported)
+      case '3': // F3 -> G3 -- Timer + powerful status (authoritative timer source)
+        // byte 0 = enable ('0'..'3'), byte 1 = on-timer, byte 2 = off-timer
+        // (0x30 + 10-min periods, 0xFE = disabled). G3 is the live source — RD/RE
+        // are stale ("only update when first set" per Faikout) so we read timers here.
         this->currentStatus.timerMode = payload[0] - '0';
+        if (payloadSize > 1)
+          this->currentStatus.onTimerMinutes  = (payload[1] == 0xFE) ? 0 : (payload[1] - 0x30) * 10;
+        if (payloadSize > 2)
+          this->currentStatus.offTimerMinutes = (payload[2] == 0xFE) ? 0 : (payload[2] - 0x30) * 10;
         // If F6 is unsupported, read powerful from G3 byte 3 bit 1
         if (s21SkipMask & (1ULL << S21_QUERY_F6)) {
           this->currentSettings.powerful = (payload[3] & 0x02) ? S21_POWERFUL_MAP[1] : S21_POWERFUL_MAP[0];
@@ -592,11 +599,9 @@ bool DaikinController::parseResponse(ACResponse *response)
       case 'L': // Fan speed
         this->currentStatus.fanRPM = bytes_to_num(&payload[0], payloadSize) * 10;
         return true;
-      case 'D': // RD -> SD -- ON timer (10-min periods)
-        this->currentStatus.onTimerMinutes = bytes_to_num(&payload[0], payloadSize) * 10;
-        return true;
-      case 'E': // RE -> SE -- OFF timer (10-min periods)
-        this->currentStatus.offTimerMinutes = bytes_to_num(&payload[0], payloadSize) * 10;
+      case 'D': // RD -> SD -- ON timer. Polled only for capability detection;
+        return true;  // value comes from G3 (RD is stale once a timer is cleared)
+      case 'E': // RE -> SE -- OFF timer. Same — value sourced from G3, not here.
         return true;
       case 'M': // RM -> SM -- Target louver angle (degrees, diagnostic only)
         return true;
@@ -1015,6 +1020,30 @@ bool DaikinController::update(bool updateAll)
       res = d2ok & res;
     }
 
+    // D3 — ON/OFF timer. byte0 enable ('0'..'3'), byte1 on-timer, byte2 off-timer
+    // (both 0x30 + 10-min periods, 0xFE = disabled), byte3 preserves powerful for
+    // v0 units where D3 byte3 is the powerful fallback (ignored on v2). Validated
+    // on FTKD-zv2s: D3 31 3C FE 30 → F3 31:3C:FE:00, RD 120min.
+    if (pendingSettings.timer)
+    {
+      int onMin  = (_desiredOnTimer  >= 0) ? _desiredOnTimer  : currentStatus.onTimerMinutes;
+      int offMin = (_desiredOffTimer >= 0) ? _desiredOffTimer : currentStatus.offTimerMinutes;
+      uint8_t enable = (onMin > 0 ? 1 : 0) | (offMin > 0 ? 2 : 0);
+      payload[0] = '0' + enable;
+      payload[1] = (onMin  > 0) ? (uint8_t)(0x30 + onMin  / 10) : 0xFE;
+      payload[2] = (offMin > 0) ? (uint8_t)(0x30 + offMin / 10) : 0xFE;
+      payload[3] = '0' + S21_POWERFUL[lookupByteMapIndex(S21_POWERFUL_MAP, 2, newSettings.powerful)];
+      bool d3ok = daikinUART->sendCommandS21('D', '3', payload, 4);
+      if (d3ok) {
+        currentStatus.onTimerMinutes  = onMin;
+        currentStatus.offTimerMinutes = offMin;
+      }
+      _desiredOnTimer = -1;
+      _desiredOffTimer = -1;
+      pendingSettings.timer = false;
+      res = res & d3ok;
+    }
+
 
   }
 
@@ -1259,6 +1288,23 @@ void DaikinController::setEconoSetting(const char *setting){
   if (daikinUART->currentProtocol() == PROTOCOL_S21) {
     if (assignMapped(newSettings.econo, S21_ECONO_MAP, 2, setting)) pendingSettings.specialMode = true;
   }
+}
+
+// Timer setters — minutes, clamped to 0..1440 and snapped to 10-min periods.
+// 0 disables that timer. Both share the D3 write so we only flag pending here.
+void DaikinController::setOnTimer(int minutes){
+  if (daikinUART->currentProtocol() != PROTOCOL_S21) return;
+  if (minutes < 0) minutes = 0;
+  if (minutes > 720) minutes = 720;   // documented unit max is 12 h
+  _desiredOnTimer = (minutes / 10) * 10;
+  pendingSettings.timer = true;
+}
+void DaikinController::setOffTimer(int minutes){
+  if (daikinUART->currentProtocol() != PROTOCOL_S21) return;
+  if (minutes < 0) minutes = 0;
+  if (minutes > 720) minutes = 720;   // documented unit max is 12 h
+  _desiredOffTimer = (minutes / 10) * 10;
+  pendingSettings.timer = true;
 }
 
 // Enable / Disable physical controls from IR Remote / Front button.
