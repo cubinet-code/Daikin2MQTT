@@ -2195,7 +2195,7 @@ String jsonValueTemplate(const char* field, const char* fallback = "''") {
   return String("{{ value_json.") + field + " if (value_json is defined and value_json." + field + " is defined) else " + fallback + " }}";
 }
 
-void publishMQTTSensorConfig(const char *name, const char *id, const char *icon, const char *unit, const char *deviceClass, String stateTopic, String valueTemplate, String topic, String entityCategory = "")
+void publishMQTTSensorConfig(const char *name, const char *id, const char *icon, const char *unit, const char *deviceClass, String stateTopic, String valueTemplate, String topic, String entityCategory = "", String stateClass = "")
 {
   JsonDocument haSensorConfig;
   haSensorConfig["name"] = name;
@@ -2211,6 +2211,11 @@ void publishMQTTSensorConfig(const char *name, const char *id, const char *icon,
     } else if(strcmp(deviceClass, "temperature") == 0){
       haSensorConfig["state_class"] = "measurement";
     }
+  }
+  // Explicit state_class for numeric sensors with no device_class (e.g. dimensionless
+  // load index) — enables HA long-term statistics + proper graphing.
+  if (!stateClass.isEmpty()) {
+    haSensorConfig["state_class"] = stateClass;
   }
   if (!entityCategory.isEmpty())
   {
@@ -2574,7 +2579,7 @@ void haConfig()
     // against compressor frequency changes (compressor stayed idle during testing).
     publishMQTTSensorConfig("Compressor Load (Rb)", "_load_signal", "mdi:gauge", NULL, NULL,
       ha_state_topic, jsonValueTemplate("loadSignal"),
-      diagPrefix + "load_signal/config");
+      diagPrefix + "load_signal/config", "", "measurement");
     // Humidity is published only when a real sensor is detected (Re != "050"
     // placeholder, or F9.b2 != 0xFF). FTKD15ZV2S has no sensor — entity hidden.
     if (ac.supportsHumidity()) {
