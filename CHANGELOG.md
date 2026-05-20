@@ -8,6 +8,40 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.4-b5] - 2026-05-20
+
+A diagnostics overhaul following the full S21 read-surface mapping: drop the
+sensors that carry no information, decode the ones that do, and fold capability
+metadata onto the climate entity instead of scattering it across raw sensors.
+
+### Added
+- **Energy (FA)** diagnostic sensor — the `FA` register decoded as cumulative kWh
+  (`device_class: energy`). Identical to the main Energy Meter (`FM`) on FTKD units
+  but diverges on FTKC/FTKQ, so it is exposed separately as a long-term cross-check.
+- **Graphable R-class sensors** `RA`/`RB`/`RF`/`Rg` with `state_class: measurement`.
+  These single-field reads appear to mirror `F1` (RA≈power, RB≈mode); exposing them
+  numerically lets Home Assistant statistics confirm or refute the duplication over
+  time rather than on a single sample.
+- **Climate diagnostic attributes** — the climate entity now carries `manual_url`,
+  `special_modes` (powerful/econo/streamer availability from the `FU00` bitmap),
+  `fk_raw` (the `FK` capability bitmap as ASCII), and `demand_available`.
+
+### Changed
+- **Manual link, FK and FU00** are no longer standalone diagnostic sensors; their
+  information moved into the climate entity's attributes (stale entities are removed
+  automatically via empty-retained discovery configs).
+- **Louver Angle** and **Humidity** now declare `state_class: measurement` so Home
+  Assistant records long-term statistics for them.
+
+### Removed
+- Diagnostic sensors that read constant/zero on every model tested: **Raw FL, Raw
+  FS, Raw RW, Raw FU02**. `FU02` is also dropped from the poll cycle.
+
+### Documentation
+- Cross-checked the S21 read surface across three models (FTKD-ZV2S, FTKC-RV2S,
+  FTKQ-UV2S); corrected the earlier mislabel of `FA` as an id-like field (it is the
+  energy register, live-verified).
+
 ## [1.4-b4] - 2026-05-20
 
 Refinements on top of 1.4-b3, informed by the Daikin technical manuals and a full
@@ -75,7 +109,8 @@ snappier control experience.
 
 Previous published release.
 
-[Unreleased]: https://github.com/cubinet-code/Daikin2MQTT/compare/v1.4-b4...HEAD
+[Unreleased]: https://github.com/cubinet-code/Daikin2MQTT/compare/v1.4-b5...HEAD
+[1.4-b5]: https://github.com/cubinet-code/Daikin2MQTT/compare/v1.4-b4...v1.4-b5
 [1.4-b4]: https://github.com/cubinet-code/Daikin2MQTT/compare/v1.4-b3...v1.4-b4
 [1.4-b3]: https://github.com/cubinet-code/Daikin2MQTT/compare/V1.2...v1.4-b3
 [1.2]: https://github.com/cubinet-code/Daikin2MQTT/releases/tag/V1.2
