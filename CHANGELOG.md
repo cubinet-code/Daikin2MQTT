@@ -14,6 +14,10 @@ Cross-model fidelity, from Max's FTKQ12UV2S testing + the three-unit boot logs.
 FTKD behavior is unchanged.
 
 ### Fixed
+- **Indoor display brightness "High" now works.** The S21 code for High was wrong (`0x00`, which
+  the unit ignores), so High behaved identically to Low. Captured the real codes from the remote
+  (High=`0x04`, Low=`0x08`, Off=`0x0C`) and corrected both the write and read — High is now a
+  distinct bright level. Live-verified on FTKD.
 - **Special-mode entities no longer appear on units that can't use them.** On FTKC/FTKQ
   (which lack the FU00 special-mode extension), Powerful, Econo, Comfort Airflow and LED
   Brightness used to show in Home Assistant but their writes silently bounced. They are now

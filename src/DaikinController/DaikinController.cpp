@@ -105,11 +105,13 @@ const byte S21_DEMAND[5]      = {0, 20, 30, 40, 60};
 const char *S21_DEMAND_MAP[5] = {"Off", "80%", "70%", "60%", "40%"};
 
 // F6/D6 byte 3 — indoor-unit display (LED) brightness. 2-bit field, mask 0x0C.
-// Probed on FTKD-zv2s (DAIKIN_GUESTROOM, 2026-05-20) by cycling the remote's
-// MENU brightness menu: High=0x30 (no bits), Low=0x38 (bit 3), Off=0x3C (bits 2+3).
-// Polarity is inverted vs the Faikin simulator (more bits = dimmer). The byte is
-// the usual ASCII-offset form ('0' + bits); we match on the raw field (payload & 0x0C).
-const byte S21_LED[3]      = {0x00, 0x08, 0x0C};
+// Captured on FTKD-zv2s (DAIKIN_GUESTROOM, 2026-05-20) by cycling the remote's
+// MENU brightness menu and reading F6 back: High=0x34 (bit 2), Low=0x38 (bit 3),
+// Off=0x3C (bits 2+3). i.e. field 0x04=High, 0x08=Low, 0x0C=Off; 0x00 is invalid
+// (an earlier guess used 0x00 for High — the unit ignored it, so High behaved the
+// same as Low). The byte is the usual ASCII-offset form ('0' + bits); we match on
+// the raw field (payload & 0x0C).
+const byte S21_LED[3]      = {0x04, 0x08, 0x0C};
 const char *S21_LED_MAP[3] = {"High", "Low", "Off"};
 
 int16_t bytes_to_num(uint8_t *bytes, size_t len)
@@ -498,7 +500,7 @@ bool DaikinController::parseResponse(ACResponse *response)
         //   byte 0 bit 6 (0x40) = comfort airflow (redirects louver to ceiling)
         //   byte 0 bit 7 (0x80) = quiet (outdoor unit quiet mode)
         //   byte 1 bit 7 (0x80) = streamer (mold/odor prevention discharge)
-        //   byte 3 bits 2+3 (0x0C) = display brightness: High=0x00, Low=0x08, Off=0x0C
+        //   byte 3 bits 2+3 (0x0C) = display brightness: High=0x04, Low=0x08, Off=0x0C
         this->currentSettings.powerful = (payload[0] & 0x02) ? S21_POWERFUL_MAP[1] : S21_POWERFUL_MAP[0];
         this->currentSettings.comfort  = (payload[0] & 0x40) ? S21_COMFORT_MAP[1]  : S21_COMFORT_MAP[0];
         this->currentSettings.quiet    = (payload[0] & 0x80) ? S21_QUIET_MAP[1]    : S21_QUIET_MAP[0];
