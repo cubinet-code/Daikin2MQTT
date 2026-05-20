@@ -43,6 +43,44 @@ All settings are configurable via the built-in web UI:
 - **Unit**: Temperature unit (C/F), min/max temp, temp step, inside/outside temp offset, fan speed levels (3/5), mode support, update interval, LED, beep
 - **Others**: HA autodiscovery, availability reporting, debug mode
 
+## Debugging & Raw Protocol Access
+
+The firmware exposes MQTT topics for probing the A/C protocol live, without flashing new firmware. All topics are under `daikin2mqtt/<device-name>/`. Source `mosquitto_pub`/`mosquitto_sub` from your broker to use them.
+
+### Raw S21 command probe
+
+Send arbitrary space-separated hex bytes; the reply is published with framing/CRC stripped. The first two bytes are the command (e.g. `46 36` = `F6`); any further bytes are the payload.
+
+```bash
+# Query F6 (auto-polled status); reply lands on .../recv/s21
+mosquitto_sub -t 'daikin2mqtt/DAIKIN_BEDROOM/recv/s21' &
+mosquitto_pub -t 'daikin2mqtt/DAIKIN_BEDROOM/send/s21' -m '46 36'
+```
+
+Reply format is `<cmd> <status> <hex-payload>`, where `<status>` is `OK`, `NAK`, or `TIMEOUT` (ACK-only writes report empty hex). The format is grep-friendly: `mosquitto_sub … | grep '^F6 OK'`. Requires the S21 protocol; works without debug mode.
+
+### Batch S21 query
+
+Probe several commands in one shot — space- or comma-separated 2-char command codes. One reply line per command is published to `.../recv/s21exp`.
+
+```bash
+mosquitto_pub -t 'daikin2mqtt/DAIKIN_BEDROOM/send/s21exp' -m 'F1 FN FP'
+```
+
+### Raw serial pass-through
+
+`.../serial/send` writes raw bytes straight to the serial port and returns the reply (read until `ETX`) on `.../serial/recv`. This requires **debug mode** to be enabled and the unit connected.
+
+### Debug mode
+
+Publish `ON`/`OFF` to `.../debug/set` to toggle debug mode. While enabled, normal status polling is suspended and the device reports itself unavailable to Home Assistant, so you can probe the bus without the poll loop interfering. Status messages are published to `.../debug`.
+
+```bash
+mosquitto_pub -t 'daikin2mqtt/DAIKIN_BEDROOM/debug/set' -m 'ON'
+```
+
+Every poll is also logged to the in-memory log buffer, viewable at `http://<device-ip>/api/logs` — look for `S21 >> ` / `S21 << ` lines.
+
 ## Build
 
 Requires [PlatformIO](https://platformio.org/).
