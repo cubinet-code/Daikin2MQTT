@@ -75,6 +75,8 @@ struct HVACStatus
   float outsideTemperature;
   float coilTemperature;
   float energyMeter;
+  float energyMeterFA;    // FA energy register — cross-check vs FM (== on FTKD,
+                          // differs on FTKC/FTKQ). Decoded same as FM.
   int fanRPM;
   bool operating; // if true, the heatpump is operating to reach the desired temperature
   int compressorFrequency;
@@ -102,9 +104,9 @@ struct HVACStatus
 // parseResponse() to populate it, and add an HA discovery entry in haConfig().
 struct DiagSensors
 {
-  // Single-byte F-class reads (FA/FK now decoded — see energy sensor + climate
-  // attributes; kept here as the parse landing spot, no longer raw-published).
-  String FA, FB, FG, FK, FN, FP, FQ, FT;
+  // Single-byte F-class reads. FK kept as the parse landing spot for climate
+  // attributes (no longer raw-published); FA fully decoded to an energy sensor.
+  String FB, FG, FK, FN, FP, FQ, FT;
   // 2-byte F-class reads discovered on FTKD-zv2s, meanings still unknown.
   String FR, FV;
   // R-class reads (unknown semantics) exposed as numeric sensors for long-run

@@ -586,6 +586,12 @@ bool DaikinController::parseResponse(ACResponse *response)
         this->currentStatus.energyMeter = s21_decode_hex_sensor(payload) / 10.0; // kWh
         return true;
 
+      case 'A': // FA -> GA -- energy register (reversed-nibble ASCII-hex, /10 = kWh)
+        // Identical to FM on FTKD (cumulative kWh, live-verified); diverges on
+        // FTKC/FTKQ. Exposed as a separate diagnostic to cross-check the meter.
+        this->currentStatus.energyMeterFA = s21_decode_hex_sensor(payload) / 10.0;
+        return true;
+
       // FU<sub> -> GU<sub> -- protocol-v2 extension reads.
       // Payload[0..1] echoes the sub-command; remaining bytes are the data.
       case 'U':
@@ -610,7 +616,6 @@ bool DaikinController::parseResponse(ACResponse *response)
       {
         String hex = getHEXformatted(payload, payloadSize);
         switch (cmd2_in) {
-          case 'A': _diag.FA = hex; break;
           case 'B': _diag.FB = hex; break;
           case 'G': _diag.FG = hex; break;
           case 'K': _diag.FK = hex; break;

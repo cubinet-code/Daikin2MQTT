@@ -1807,6 +1807,9 @@ void publishHpState()
   if (ac.daikinUART->currentProtocol() == PROTOCOL_S21 && currentStatus.energyMeter != 0.0){
     rootInfo["energyMeter"] = (int)(currentStatus.energyMeter * 100 + 0.5) / 100.0;
   }
+  if (ac.daikinUART->currentProtocol() == PROTOCOL_S21 && currentStatus.energyMeterFA != 0.0){
+    rootInfo["energyFA"] = (int)(currentStatus.energyMeterFA * 100 + 0.5) / 100.0;
+  }
   String mqttOutput;
   serializeJson(rootInfo, mqttOutput);
 
@@ -2522,6 +2525,9 @@ void haConfig()
 
   if (proto == PROTOCOL_S21 && ac.supportsEnergyMeter()){
     publishMQTTSensorConfig("Energy Meter", "_energy_meter", HA_counter, "kWh", "energy", ha_state_topic, jsonValueTemplate("energyMeter"), ha_sensor_energy_meter_config_topic);
+    // FA energy register — diagnostic cross-check vs FM (identical on FTKD,
+    // diverges on FTKC/FTKQ). device_class=energy auto-sets state_class=total_increasing.
+    publishMQTTSensorConfig("Energy (FA)", "_energy_fa", HA_counter, "kWh", "energy", ha_state_topic, jsonValueTemplate("energyFA"), ha_sensor_energy_fa_config_topic, "diagnostic");
   }
 
   if (ac.supportsRealTargetTemp()) {
@@ -3180,6 +3186,7 @@ void setup()
         ha_sensor_fan_rpm_temp_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/fan_rpm/config";
         ha_sensor_comp_freq_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/comp_freq/config";
         ha_sensor_energy_meter_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/energy_meter/config";
+        ha_sensor_energy_fa_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/energy_fa/config";
         ha_sensor_error_code_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/error_code/config";
         ha_sensor_manual_url_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/manual_url/config";
         ha_sensor_timer_mode_config_topic = others_haa_topic + "/sensor/" + mqtt_fn + "/timer_mode/config";
