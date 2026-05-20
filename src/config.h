@@ -17,7 +17,7 @@
 */
 
 
-const PROGMEM char* dk2mqtt_version = "1.4-b2";
+const PROGMEM char* dk2mqtt_version = "1.4-b3";
 
 //Define global variables for files
 const PROGMEM char* wifi_conf = "/wifi.json";
@@ -68,6 +68,7 @@ const PROGMEM char* HA_comfort = "mdi:air-conditioner";
 const PROGMEM char* HA_quiet = "mdi:volume-mute";
 const PROGMEM char* HA_streamer = "mdi:air-purifier";
 const PROGMEM char* HA_econo = "mdi:leaf";
+const PROGMEM char* HA_power_limit = "mdi:speedometer-slow";  // demand control (D7 byte 0)
 const PROGMEM char* HA_remote_off = "mdi:remote-off";
 
 
@@ -113,6 +114,7 @@ String ha_number_off_timer_set_topic;
 String ha_select_vane_vertical_config_topic;
 String ha_select_vane_horizontal_config_topic;
 String ha_select_led_brightness_config_topic;
+String ha_select_power_limit_config_topic;
 String ha_switch_unit_led_config_topic;
 String ha_switch_unit_beep_config_topic;
 String ha_switch_powerful_config_topic;
@@ -131,6 +133,7 @@ String ha_diag_topic;
 String ha_availability_topic;
 String ha_switch_unit_led_set_topic;
 String ha_select_led_brightness_set_topic;
+String ha_select_power_limit_set_topic;
 String ha_switch_unit_beep_set_topic;
 String ha_switch_powerful_set_topic;
 String ha_switch_comfort_set_topic;

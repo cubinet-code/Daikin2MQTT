@@ -7,8 +7,9 @@ Control your Daikin Air Conditioner locally with Home Assistant using ESP32. Com
 - Bi-directional control, syncs true A/C status to Home Assistant
 - Support for Daikin wall-type A/C (S21 connector) and SkyAir (X50A connector)
 - Automatic protocol detection (S21 tested first, then X50)
-- Home Assistant MQTT Discovery with climate entity, sensors, switches, and selects
+- Home Assistant MQTT Discovery with climate entity, sensors, switches, selects, and numbers
 - Powerful Mode exposed as HA climate preset (boost)
+- Local compressor power-limit (S21 demand control) — cap power draw without the Daikin cloud
 - Built-in web UI for configuration and control
 - OTA firmware updates (web upload or ArduinoOTA)
 - Configurable temperature offsets for inside/outside sensors
@@ -19,16 +20,24 @@ Control your Daikin Air Conditioner locally with Home Assistant using ESP32. Com
 
 - **Climate entity**: Power, mode, target temperature, fan speed, vertical/horizontal swing
 - **Presets**: Powerful mode (boost)
-- **Switches**: LED, beep, powerful mode, IR remote enable/disable
-- **Selects**: Vertical vane, horizontal vane
+- **Switches**: Controller LED, beep, powerful mode, comfort airflow, outdoor quiet, streamer, econo, IR remote enable/disable
+- **Selects**: Vertical vane, horizontal vane, indoor LED brightness, power limit (compressor demand control)
+- **Numbers**: ON timer, OFF timer
+
+Model-dependent controls (comfort, quiet, streamer, LED brightness, econo, power limit) appear only on units that support them; unsupported S21 commands are auto-skipped after the first NAK.
 
 ## Sensors
 
 - Room temperature
 - Outdoor unit temperature
 - Coil temperature
+- Humidity (model-dependent)
 - Fan RPM
+- Fan target RPM
 - Compressor frequency
+- Compressor load
+- Real target temperature
+- Louver angle
 - Error code
 - Timer status
 - Energy meter (model-dependent)

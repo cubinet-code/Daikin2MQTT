@@ -1017,13 +1017,19 @@ bool DaikinController::update(bool updateAll)
         if (!sent) Log.ln(TAG, "D3 fallback also failed — powerful mode not supported");
       }
 
-      // D7: econo (independent of D6/D3 path)
+      // D7: byte 0 = demand control (power limit), byte 1 = econo. Both share this
+      // one write, so each byte is populated from current settings to avoid clobbering
+      // the other. (independent of D6/D3 path)
       if (!(s21SkipMask & (1ULL << S21_QUERY_F7))) {
-        uint8_t d7p[4] = {'0',
+        uint8_t d7p[4] = {
+          (uint8_t)('0' + S21_DEMAND[lookupByteMapIndex(S21_DEMAND_MAP, 5, newSettings.demandControl)]),
           (uint8_t)('0' + S21_ECONO[lookupByteMapIndex(S21_ECONO_MAP, 2, newSettings.econo)]),
           '0', '0'};
         bool d7ok = daikinUART->sendCommandS21('D', '7', d7p, 4);
-        if (d7ok) currentSettings.econo = newSettings.econo;
+        if (d7ok) {
+          currentSettings.econo = newSettings.econo;
+          currentSettings.demandControl = newSettings.demandControl;
+        }
         sent = sent & d7ok;
       }
 
@@ -1313,6 +1319,7 @@ void DaikinController::setComfortSetting(const char *setting){
 const char *DaikinController::getQuietSetting()   { return currentSettings.quiet; }
 const char *DaikinController::getStreamerSetting(){ return currentSettings.streamer; }
 const char *DaikinController::getEconoSetting()   { return currentSettings.econo; }
+const char *DaikinController::getDemandControlSetting(){ return currentSettings.demandControl; }
 
 void DaikinController::setQuietSetting(const char *setting){
   if (daikinUART->currentProtocol() == PROTOCOL_S21) {
@@ -1327,6 +1334,11 @@ void DaikinController::setStreamerSetting(const char *setting){
 void DaikinController::setEconoSetting(const char *setting){
   if (daikinUART->currentProtocol() == PROTOCOL_S21) {
     if (assignMapped(newSettings.econo, S21_ECONO_MAP, 2, setting)) pendingSettings.specialMode = true;
+  }
+}
+void DaikinController::setDemandControlSetting(const char *setting){
+  if (daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (assignMapped(newSettings.demandControl, S21_DEMAND_MAP, 5, setting)) pendingSettings.specialMode = true;
   }
 }
 

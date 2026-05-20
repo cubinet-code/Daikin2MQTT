@@ -1657,6 +1657,7 @@ void populateRootInfo(const HVACSettings &settings, const HVACStatus &status, bo
   rootInfo["quiet"] = settings.quiet;
   rootInfo["streamer"] = settings.streamer;
   rootInfo["econo"] = settings.econo;
+  rootInfo["demandControl"] = settings.demandControl;
   rootInfo["ledBrightness"] = settings.ledBrightness;
 
   if (fullStatus) {
@@ -2132,6 +2133,13 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
       playBeep(SET); ac.update(); publishHpState();
     }
   }
+  else if (strcmp(topic, ha_select_power_limit_set_topic.c_str()) == 0)
+  {
+    if (strcasecmp(message, ac.getDemandControlSetting()) != 0) {
+      ac.setDemandControlSetting(message);
+      playBeep(SET); ac.update(); publishHpState();
+    }
+  }
   else if (strcmp(topic, ha_number_on_timer_set_topic.c_str()) == 0)
   {
     int minutes = atoi(message);
@@ -2604,6 +2612,16 @@ void haConfig()
       ha_select_led_brightness_set_topic, ledOpts, 3, ha_select_led_brightness_config_topic);
   }
 
+  // Power Limit select — compressor demand control (D7 byte 0). Same F7/D7 capability
+  // as econo. Write-only/optimistic: the unit doesn't echo the active cap.
+  if (proto == PROTOCOL_S21 && ac.supportsDemandControl()){
+    const char* powerLimitOpts[] = {"Off", "80%", "70%", "60%", "40%"};
+    publishMQTTSelectConfig("Power Limit", "_power_limit", HA_power_limit,
+      ha_state_topic,
+      F("{{ value_json.demandControl if (value_json is defined and value_json.demandControl is defined and value_json.demandControl|length) else 'Off' }}"),
+      ha_select_power_limit_set_topic, powerLimitOpts, 5, ha_select_power_limit_config_topic);
+  }
+
   // Decoded protocol-v2 telemetry from RK/Rb (no v0 fallback — won't appear if FK absent).
   if (proto == PROTOCOL_S21 && others_haa) {
     String diagPrefix = others_haa_topic + "/sensor/" + mqtt_fn + "/";
@@ -2700,6 +2718,7 @@ void mqttConnect()
       mqtt_client.subscribe(ha_switch_streamer_set_topic.c_str());
       mqtt_client.subscribe(ha_switch_econo_set_topic.c_str());
       mqtt_client.subscribe(ha_select_led_brightness_set_topic.c_str());
+      mqtt_client.subscribe(ha_select_power_limit_set_topic.c_str());
       mqtt_client.subscribe(ha_number_on_timer_set_topic.c_str());
       mqtt_client.subscribe(ha_number_off_timer_set_topic.c_str());
       mqtt_client.subscribe(ha_preset_mode_set_topic.c_str());
@@ -3108,6 +3127,7 @@ void setup()
       ha_switch_streamer_set_topic = mqtt_topic + "/" + mqtt_fn + "/streamer/set";
       ha_switch_econo_set_topic = mqtt_topic + "/" + mqtt_fn + "/econo/set";
       ha_select_led_brightness_set_topic = mqtt_topic + "/" + mqtt_fn + "/led_brightness/set";
+      ha_select_power_limit_set_topic = mqtt_topic + "/" + mqtt_fn + "/power_limit/set";
       ha_number_on_timer_set_topic = mqtt_topic + "/" + mqtt_fn + "/on_timer/set";
       ha_number_off_timer_set_topic = mqtt_topic + "/" + mqtt_fn + "/off_timer/set";
       ha_preset_mode_set_topic = mqtt_topic + "/" + mqtt_fn + "/preset/set";
@@ -3134,6 +3154,7 @@ void setup()
         ha_select_vane_vertical_config_topic = others_haa_topic + "/select/" + mqtt_fn + "/vane_vertical/config";
         ha_select_vane_horizontal_config_topic = others_haa_topic + "/select/" + mqtt_fn + "/vane_horizontal/config";
         ha_select_led_brightness_config_topic = others_haa_topic + "/select/" + mqtt_fn + "/led_brightness/config";
+        ha_select_power_limit_config_topic = others_haa_topic + "/select/" + mqtt_fn + "/power_limit/config";
         ha_switch_unit_led_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/led/config";
         ha_switch_unit_beep_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/beep/config";
         ha_switch_powerful_config_topic = others_haa_topic + "/switch/" + mqtt_fn + "/powerful/config";

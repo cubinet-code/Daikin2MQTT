@@ -249,8 +249,8 @@ private:
   HardwareSerial *_serial{nullptr};
 
   HVACStatus currentStatus{0, 0, 0, 0, 0, 0};
-  HVACSettings currentSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", "OFF", "OFF", "OFF", "High", true};
-  HVACSettings newSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", "OFF", "OFF", "OFF", "High", true};
+  HVACSettings currentSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", "OFF", "OFF", "OFF", "Off", "High", true};
+  HVACSettings newSettings{"OFF", "COOL", 25.0, "auto", "hold", "hold", "OFF", "OFF", "OFF", "OFF", "OFF", "Off", "High", true};
   DiagSensors _diag{};
 
   // Temporary setting value.
