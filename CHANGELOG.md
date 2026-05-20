@@ -8,6 +8,27 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.4-b4] - 2026-05-20
+
+Refinements on top of 1.4-b3, informed by the Daikin technical manuals and a full
+mapping of the S21 read surface.
+
+### Added
+- **Human-readable Error Code** — S21 fault codes are decoded to text in the Home
+  Assistant discovery template (e.g. `A5 - Freeze-up protection`). `A5` is shown as
+  the normal freeze-protection control action rather than a malfunction; unknown
+  codes pass through verbatim.
+
+### Changed
+- **Compressor Frequency** now reports `device_class: frequency`.
+- **Maximum setpoint** raised to **32 °C** (was 30) to match the FTKD-ZV2S manual's
+  documented 16–32 °C range.
+
+### Documentation
+- Mapped the complete S21 read surface (F-class, R-class, and `FU` sub-command
+  sweeps). Indoor humidity, real-time power, Mold Proof, model capacity-class, and
+  Power-Limit readback are confirmed **not available** over S21 on these units.
+
 ## [1.4-b3] - 2026-05-20
 
 Largest update since 1.2: full support for newer S21 "v2" wall units
@@ -54,6 +75,7 @@ snappier control experience.
 
 Previous published release.
 
-[Unreleased]: https://github.com/cubinet-code/Daikin2MQTT/compare/v1.4-b3...HEAD
+[Unreleased]: https://github.com/cubinet-code/Daikin2MQTT/compare/v1.4-b4...HEAD
+[1.4-b4]: https://github.com/cubinet-code/Daikin2MQTT/compare/v1.4-b3...v1.4-b4
 [1.4-b3]: https://github.com/cubinet-code/Daikin2MQTT/compare/V1.2...v1.4-b3
 [1.2]: https://github.com/cubinet-code/Daikin2MQTT/releases/tag/V1.2

@@ -357,9 +357,9 @@ void saveUnit(String tempUnit, String supportMode, String updateInterval, String
   if (minTemp.isEmpty())
     minTemp = 16;
   doc["min_temp"] = minTemp;
-  // if maxTemp is empty, we use default 31
+  // if maxTemp is empty, we use default 32 (FTKD-ZV2S manual: setpoint range 16–32 °C)
   if (maxTemp.isEmpty())
-    maxTemp = 31;
+    maxTemp = 32;
   doc["max_temp"] = maxTemp;
   // if tempStep is empty, we use default 1
   if (tempStep.isEmpty())
@@ -2497,9 +2497,22 @@ void haConfig()
   publishMQTTSensorConfig("Coil temperature", "_inside_coil_temp", HA_coil_icon, useFahrenheit ? "°F" : "°C", "temperature", ha_state_topic, inside_coil_temp_tpl_str, ha_sensor_inside_coil_temp_config_topic);
   publishMQTTSensorConfig("Fan RPM", "_inside_fan_rpm", HA_turbine_icon, "RPM", NULL, ha_state_topic, jsonValueTemplate("fanRPM"), ha_sensor_fan_rpm_temp_config_topic, "", "measurement");
   if (ac.supportsCompressorFreq()) {
-    publishMQTTSensorConfig("Compressor Frequency", "_comp_freq", HA_sine_wave_icon, "Hz", NULL, ha_state_topic, jsonValueTemplate("compressorFrequency"), ha_sensor_comp_freq_config_topic, "", "measurement");
+    publishMQTTSensorConfig("Compressor Frequency", "_comp_freq", HA_sine_wave_icon, "Hz", "frequency", ha_state_topic, jsonValueTemplate("compressorFrequency"), ha_sensor_comp_freq_config_topic, "", "measurement");
   }
-  publishMQTTSensorConfig("Error Code", "_error_code", HA_alert, NULL, NULL, ha_state_topic, jsonValueTemplate("errorCode"), ha_sensor_error_code_config_topic, "diagnostic");
+  // Error Code — decoded to human-readable text in the discovery value_template
+  // (Daikin service manual SiTH042503E §4.1). Empty/00 = OK; A5 = freeze-up
+  // protection, which is a normal control action, not a malfunction. Unknown
+  // codes pass through verbatim. Mapping lives in discovery so HA shows the text.
+  String errorCodeTemplate = F(
+    "{% set c = value_json.errorCode if (value_json is defined and value_json.errorCode is defined and value_json.errorCode|length) else '00' %}"
+    "{% set m = {'00':'OK','U0':'Refrigerant shortage','U2':'Voltage out of range','U4':'Indoor/outdoor comms error','UA':'Indoor/outdoor mismatch',"
+    "'A1':'Indoor PCB fault','A5':'Freeze-up protection','A6':'Indoor fan motor','C4':'Indoor coil thermistor','C9':'Room thermistor',"
+    "'E1':'Outdoor PCB fault','E5':'Compressor overload','E6':'Compressor lock','E7':'Outdoor fan lock','E8':'Input overcurrent',"
+    "'F3':'Discharge pipe temp','F6':'High pressure (cooling)','F8':'Compressor temp shutdown','H0':'Compressor sensor','H6':'Position sensor',"
+    "'H8':'DC volt/current sensor','H9':'Outdoor thermistor','J3':'Discharge thermistor','J6':'Outdoor coil thermistor','L3':'Electrical box temp',"
+    "'L4':'Radiation fin temp','L5':'Output overcurrent','P4':'Fin thermistor'} %}"
+    "{% if c in ['','00'] %}OK{% elif c in m %}{{ c }} - {{ m[c] }}{% else %}{{ c }}{% endif %}");
+  publishMQTTSensorConfig("Error Code", "_error_code", HA_alert, NULL, NULL, ha_state_topic, errorCodeTemplate, ha_sensor_error_code_config_topic, "diagnostic");
   // Manual link — only exposed for models with a mapped URL (skipped at connect-time
   // before the model is read; published once the FC model query has resolved).
   if (!ac.getManualUrl().isEmpty())

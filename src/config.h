@@ -17,7 +17,7 @@
 */
 
 
-const PROGMEM char* dk2mqtt_version = "1.4-b3";
+const PROGMEM char* dk2mqtt_version = "1.4-b4";
 
 //Define global variables for files
 const PROGMEM char* wifi_conf = "/wifi.json";
@@ -163,7 +163,7 @@ const PROGMEM uint32_t HP_MAX_RETRIES = 10; // Double the interval between retri
 
 // Customization
 uint8_t min_temp                    = 16; // Minimum temperature, check value from heatpump remote control
-uint8_t max_temp                    = 30; // Maximum temperature, check value from heatpump remote control
+uint8_t max_temp                    = 32; // Maximum temperature (FTKD-ZV2S manual: setpoint range 16–32 °C)
 String temp_step                    = "0.5"; // Temperature setting step, check value from heatpump remote control
 uint32_t update_int                 = SEND_ROOM_TEMP_INTERVAL_MS;
 float inside_temp_offset            = 0.0;
