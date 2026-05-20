@@ -124,16 +124,25 @@ const char* const S21queryCmds[] = {
   "Rd",         // 29 - Compressor frequency
   "Re",         // 30 - Humidity
   "FM",         // 31 - Energy Meter
-  // v2 commands discovered by probing FTKD-zv2s (model 7B91). Raw payloads of
-  // still-unknown ones are exposed as HA diagnostic sensors for graphing.
-  // Known-redundant ones (RA/RB/RC/RF/Rg duplicate F1/F5/Rd) are intentionally
-  // not polled to save UART time.
-  "FL",         // 32 - Unknown 2-byte cmd, observed constant "0000"
+  // v2 commands discovered by probing FTKD-zv2s (model 7B91). Indices are
+  // positional (tied to s21SkipMask bits + S21_QUERY_* defines), so entries are
+  // only ever APPENDED, never reordered or removed.
+  // FL(32)/FS(17)/RW(37) read constant zero on every model tested — still polled
+  // for index integrity but no longer parsed/exposed (1.4-b5 diag cleanup).
+  "FL",         // 32 - constant "0000" on all models (dropped from diag)
   "FR",         // 33 - Unknown 2-byte cmd, observed "?O00"
   "FV",         // 34 - Unknown 2-byte cmd, contains binary 0x83 byte
   "RK",         // 35 - Indoor fan target RPM × 10 (validated: tracks fan setting)
   "Rb",         // 36 - Compressor load signal × 100? (per Faikout; not yet user-validated)
-  "RW",         // 37 - Unknown (observed constant "00" while wideVane=swing — investigating)
+  "RW",         // 37 - constant "00" on all models (dropped from diag)
+  // RA/RB/RF/Rg single-field reads appended for long-run comparison vs F1: probing
+  // FTKD shows RA="1"(=F1 power), RB="3"(=F1 mode), RF="00", Rg="1". Exposed as
+  // graphable numeric diag sensors so HA statistics can confirm the duplication
+  // over time rather than on one sample (RC excluded — also redundant, not needed).
+  "RA",         // 38 - single byte, looks like F1 power state
+  "RB",         // 39 - single byte, looks like F1 mode
+  "RF",         // 40 - two bytes "00"
+  "Rg",         // 41 - single byte "1"
   };
 
 const char* const S21setCmds[] = {

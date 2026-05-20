@@ -1782,12 +1782,13 @@ void publishDiag()
   if (ac.daikinUART->currentProtocol() != PROTOCOL_S21) return;
   const DiagSensors &d = ac.getDiag();
   JsonDocument doc;
-  doc["FA"] = d.FA;     doc["FB"] = d.FB;     doc["FG"] = d.FG;
-  doc["FK"] = d.FK;     doc["FL"] = d.FL;     doc["FN"] = d.FN;
+  // Still-raw unknowns kept for graphing. FA/FK/FU00 are no longer raw (decoded
+  // to energy sensor + climate attributes); FL/FS/RW/FU02 dropped as useless.
+  doc["FB"] = d.FB;     doc["FG"] = d.FG;     doc["FN"] = d.FN;
   doc["FP"] = d.FP;     doc["FQ"] = d.FQ;     doc["FR"] = d.FR;
-  doc["FS"] = d.FS;     doc["FT"] = d.FT;     doc["FV"] = d.FV;
-  doc["RW"] = d.RW;
-  doc["FU00"] = d.FU00; doc["FU02"] = d.FU02; doc["FU04"] = d.FU04;
+  doc["FT"] = d.FT;     doc["FV"] = d.FV;     doc["FU04"] = d.FU04;
+  // R-class single-field reads exposed as graphable numerics (vs F1 over time).
+  doc["RA"] = d.RA;     doc["RB"] = d.RB;     doc["RF"] = d.RF;     doc["Rg"] = d.Rg;
   String out;
   serializeJson(doc, out);
   mqtt_client.publish_P(ha_diag_topic.c_str(), out.c_str(), false);
@@ -2657,11 +2658,20 @@ void haConfig()
         diagPrefix + "humidity/config");
     }
 
+    // Drop diag entities removed in 1.4-b5: FL/FS/RW/FU02 proved constant/useless
+    // on every model; FA/FK/FU00 are now decoded (energy sensor + climate
+    // attributes) so their raw "Raw <CMD>" entities are retired. Empty retained
+    // payload tells HA to forget the discovery config (same idiom as line ~2538).
+    static const char *removedDiagCmds[] = {"FA","FK","FL","FS","RW","FU00","FU02"};
+    for (const char *cmd : removedDiagCmds) {
+      String t = diagPrefix + "diag_" + cmd + "/config";
+      mqtt_client.publish(t.c_str(), "", true);
+    }
+
     // Raw S21 payloads we don't fully understand yet — exposed for graphing.
     // Naming convention: HA entity "Raw <CMD>" so user can grep in dashboard.
     static const char *diagCmds[] = {
-      "FA","FB","FG","FK","FL","FN","FP","FQ","FR","FS","FT","FV","RW",
-      "FU00","FU02","FU04"
+      "FB","FG","FN","FP","FQ","FR","FT","FV","FU04"
     };
     for (const char *cmd : diagCmds) {
       String suffix = String("_diag_") + cmd;
@@ -2669,6 +2679,21 @@ void haConfig()
       String entityName = String("Raw ") + cmd;
       publishMQTTSensorConfig(entityName.c_str(), suffix.c_str(), "mdi:code-tags", NULL, NULL,
         ha_diag_topic, jsonValueTemplate(cmd), configTopic, "diagnostic");
+    }
+
+    // R-class single-field reads (RA/RB/RF/Rg) as numeric diagnostic sensors with
+    // state_class=measurement so HA records long-term statistics. They appear to
+    // mirror F1 (RA=power, RB=mode); graphing them lets us confirm/refute that
+    // over weeks rather than on a single sample.
+    struct { const char *cmd; const char *name; } rDiag[] = {
+      {"RA", "R-class RA (vs power)"}, {"RB", "R-class RB (vs mode)"},
+      {"RF", "R-class RF"},            {"Rg", "R-class Rg"}
+    };
+    for (auto &r : rDiag) {
+      String suffix = String("_diag_") + r.cmd;
+      String configTopic = diagPrefix + "diag_" + r.cmd + "/config";
+      publishMQTTSensorConfig(r.name, suffix.c_str(), "mdi:chart-line", NULL, NULL,
+        ha_diag_topic, jsonValueTemplate(r.cmd), configTopic, "diagnostic", "measurement");
     }
   }
 

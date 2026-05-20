@@ -102,18 +102,18 @@ struct HVACStatus
 // parseResponse() to populate it, and add an HA discovery entry in haConfig().
 struct DiagSensors
 {
-  // Single-byte F-class reads of unknown meaning (still polled, graphed in HA).
-  String FA, FB, FG, FK, FN, FP, FQ, FS, FT;
+  // Single-byte F-class reads (FA/FK now decoded — see energy sensor + climate
+  // attributes; kept here as the parse landing spot, no longer raw-published).
+  String FA, FB, FG, FK, FN, FP, FQ, FT;
   // 2-byte F-class reads discovered on FTKD-zv2s, meanings still unknown.
-  String FL, FR, FV;
-  // R-class reads with unknown semantics (RW observed constant "00" — possibly
-  // horizontal louver position or a different mode flag; graph in HA to decode).
-  String RW;
+  String FR, FV;
+  // R-class reads (unknown semantics) exposed as numeric sensors for long-run
+  // comparison against the F1-derived fields they may duplicate.
+  String RA, RB, RF, Rg;
   // FU extension sub-commands (sent with payload, response prefixed by sub-code echo).
-  // FU04 was suspected to be lifetime kWh but a 45-min sample showed the value
-  // decreasing while the AC ran — definitely not a monotonic counter. Exposed
-  // raw so the user can graph and we can re-decode with more samples.
-  String FU00, FU02, FU04;
+  // FU00 = en_spmode bitmap (drives capability flags + climate attributes).
+  // FU04 telemetry vector kept raw for graphing. FU02 (heat-limits) dropped — useless.
+  String FU00, FU04;
 };
 
 const char X50errorCodeDivision[] = { ' ', 'A', 'C', 'E', 'H', 'F', 'J', 'L', 'P', 'U', 'M', '6', '8', '9', ' ',' '};
@@ -281,7 +281,6 @@ private:
   // FU<sub> extension reads (v2+). Each subcommand has its own skip flag because
   // they're sent as one query with payload, not via S21queryCmds[].
   bool _skipFU00 = false;
-  bool _skipFU02 = false;
   bool _skipFU04 = false;
 
   // Capability flags decoded from FU00 en_spmode bitmap (byte X = '3' if available).

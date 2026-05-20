@@ -69,6 +69,14 @@ const DaikinModelMap DAIKIN_KNOWN_MODELS[] = {
   // family name FTKD-ZV2S without making a BTU/capacity claim until we see
   // another capacity variant.
   {"7B91", "FTKD-ZV2S", "https://web-manual.dit-daikin.com/ra/3P730851-16/en/"},
+  // FC "A7D0" → FTKC-RV2S (confirmed via FTKC18RV2S boot log, 2026-05-20). Same v2
+  // wall-unit class; NAKs all FU sub-commands and FV (FTKD-ZV2S is the only one of
+  // the three that answers them — see docs/UNEXPLORED_S21_FEATURES.md).
+  {"A7D0", "FTKC-RV2S", "https://web-manual.dit-daikin.com/ra/3P730851-17/en/"},
+  // FC "DD11" → FTKQ-UV2S (reported by maxmacstn upstream; confirmed via FTKQ12UV2S
+  // boot log, 2026-05-20). Same v2 wall-unit class; D6/special-mode writes NAK on
+  // FTKQ/FTKC per upstream comments.
+  {"DD11", "FTKQ-UV2S", "https://web-manual.dit-daikin.com/ra/3P658678-13/en/"},
 };
 
 // F6/D6 special-mode bit layout (FTKD-zv2s v2 — verified by remote-button probe):
@@ -117,6 +125,20 @@ int16_t bytes_to_num(uint8_t *bytes, size_t len)
 }
 
 int16_t temp_bytes_to_c10(uint8_t *bytes) { return bytes_to_num(bytes, 4); }
+
+// Length-safe reverse-ASCII decimal decode for short R-class single-field reads
+// (e.g. RA="1", RF="00"). bytes_to_num assumes >=3 bytes; these can be 1-2.
+// Returns -1 if any byte isn't an ASCII digit so the caller can fall back to raw.
+int16_t s21_ascii_decimal(const uint8_t *bytes, size_t len)
+{
+  int16_t val = 0, mul = 1;
+  for (size_t i = 0; i < len && i < 4; i++) {
+    if (bytes[i] < '0' || bytes[i] > '9') return -1;
+    val += (bytes[i] - '0') * mul;
+    mul *= 10;
+  }
+  return val;
+}
 
 int16_t temp_bytes_to_c10(std::vector<uint8_t> &bytes)
 {
@@ -279,10 +301,10 @@ bool DaikinController::sync()
     // FU<sub> extension reads — protocol v2+. Each sub-command is a 2-char ASCII
     // selector echoed back at the start of the response payload. Self-skip on NAK.
     //   FU00 — en_spmode bitmap (which special modes are available on this unit)
-    //   FU02 — temp/humidity limits (raw, decode pending)
     //   FU04 — telemetry vector (originally suspected lifetime kWh; sample-disproved)
+    // (FU02 heat/humidity-limits dropped in 1.4-b5 — constant/useless on all models.)
     struct FUSend { const char *sub; bool *skip; } fuCmds[] = {
-      {"00", &_skipFU00}, {"02", &_skipFU02}, {"04", &_skipFU04}
+      {"00", &_skipFU00}, {"04", &_skipFU04}
     };
     for (auto &fu : fuCmds) {
       if (*fu.skip) continue;
@@ -578,8 +600,6 @@ bool DaikinController::parseResponse(ACResponse *response)
           if (payloadSize >= 3) _hasPowerful = (payload[2] == '3');
           if (payloadSize >= 4) _hasEcono    = (payload[3] == '3');
           if (payloadSize >= 8) _hasStreamer = (payload[7] == '3');
-        } else if (payload[0] == '0' && payload[1] == '2') {
-          _diag.FU02 = dataHex;
         } else if (payload[0] == '0' && payload[1] == '4') {
           _diag.FU04 = dataHex;
         }
@@ -594,12 +614,10 @@ bool DaikinController::parseResponse(ACResponse *response)
           case 'B': _diag.FB = hex; break;
           case 'G': _diag.FG = hex; break;
           case 'K': _diag.FK = hex; break;
-          case 'L': _diag.FL = hex; break;
           case 'N': _diag.FN = hex; break;
           case 'P': _diag.FP = hex; break;
           case 'Q': _diag.FQ = hex; break;
           case 'R': _diag.FR = hex; break;
-          case 'S': _diag.FS = hex; break;
           case 'T': _diag.FT = hex; break;
           case 'V': _diag.FV = hex; break;
           default: break;  // unmapped — only logged
@@ -715,7 +733,21 @@ bool DaikinController::parseResponse(ACResponse *response)
       default:
       {
         String hex = getHEXformatted(payload, payloadSize);
-        if (cmd2_in == 'W') _diag.RW = hex;
+        // RA/RB/RF/Rg: single-field reads that appear to mirror F1 (RA=power,
+        // RB=mode on FTKD). Exposed as graphable numerics so HA long-term
+        // statistics can confirm/refute the duplication over weeks rather than
+        // on a single sample. Decode reverse-ASCII decimal; keep raw hex if the
+        // payload isn't purely numeric.
+        if (cmd2_in == 'A' || cmd2_in == 'B' || cmd2_in == 'F' || cmd2_in == 'g') {
+          int16_t v = s21_ascii_decimal(payload, payloadSize);
+          String sv = (v < 0) ? hex : String(v);
+          switch (cmd2_in) {
+            case 'A': _diag.RA = sv; break;
+            case 'B': _diag.RB = sv; break;
+            case 'F': _diag.RF = sv; break;
+            case 'g': _diag.Rg = sv; break;
+          }
+        }
         Log.ln(TAG, "S%c raw (%d bytes): %s", cmd2_in, payloadSize, hex.c_str());
         return true;
       }
