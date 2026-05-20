@@ -1803,23 +1803,22 @@ void publishHpState()
 
   populateRootInfo(ac.getSettings(), currentStatus, true);
 
-  if (ac.daikinUART->currentProtocol() == PROTOCOL_S21 && currentStatus.energyMeter != 0.0){
-    rootInfo["energyMeter"] = (int)(currentStatus.energyMeter * 100 + 0.5) / 100.0;
-  }
-  if (ac.daikinUART->currentProtocol() == PROTOCOL_S21 && currentStatus.energyMeterFA != 0.0){
-    rootInfo["energyFA"] = (int)(currentStatus.energyMeterFA * 100 + 0.5) / 100.0;
-  }
-  // Climate diagnostic attributes (manual URL + FU00 special-mode availability +
-  // FK capability bitmap), surfaced via the climate entity's json_attributes_topic.
   if (ac.daikinUART->currentProtocol() == PROTOCOL_S21) {
+    if (currentStatus.energyMeter != 0.0)
+      rootInfo["energyMeter"] = (int)(currentStatus.energyMeter * 100 + 0.5) / 100.0;
+    if (currentStatus.energyMeterFA != 0.0)
+      rootInfo["energyFA"] = (int)(currentStatus.energyMeterFA * 100 + 0.5) / 100.0;
+    // Surfaced via the climate entity's json_attributes_topic (folded from FK +
+    // FU00 + the manual URL instead of standalone diagnostic sensors).
     JsonObject attrs = rootInfo["attributes"].to<JsonObject>();
     attrs["manual_url"] = ac.getManualUrl();
     JsonObject sm = attrs["special_modes"].to<JsonObject>();
     sm["powerful"] = ac.hasPowerful();
     sm["econo"]    = ac.hasEcono();
     sm["streamer"] = ac.hasStreamer();
-    if (!ac.getFkRaw().isEmpty()) {
-      attrs["fk_raw"] = ac.getFkRaw();
+    const String fk = ac.getFkRaw();
+    if (!fk.isEmpty()) {
+      attrs["fk_raw"] = fk;
       attrs["demand_available"] = ac.demandAvailable();
     }
   }

@@ -112,10 +112,9 @@ struct DiagSensors
   // R-class reads (unknown semantics) exposed as numeric sensors for long-run
   // comparison against the F1-derived fields they may duplicate.
   String RA, RB, RF, Rg;
-  // FU extension sub-commands (sent with payload, response prefixed by sub-code echo).
-  // FU00 = en_spmode bitmap (drives capability flags + climate attributes).
-  // FU04 telemetry vector kept raw for graphing. FU02 (heat-limits) dropped — useless.
-  String FU00, FU04;
+  // FU04 telemetry vector kept raw for graphing. FU00 (en_spmode bitmap) drives
+  // the capability flags directly, not stored. FU02 (heat-limits) dropped — useless.
+  String FU04;
 };
 
 const char X50errorCodeDivision[] = { ' ', 'A', 'C', 'E', 'H', 'F', 'J', 'L', 'P', 'U', 'M', '6', '8', '9', ' ',' '};

@@ -610,17 +610,14 @@ bool DaikinController::parseResponse(ACResponse *response)
       case 'U':
       {
         if (payloadSize < 2) return false;
-        // Hex string of the data portion (after the 2-byte sub-echo)
-        String dataHex = getHEXformatted(&payload[2], payloadSize - 2);
         if (payload[0] == '0' && payload[1] == '0') {
-          _diag.FU00 = dataHex;
           // en_spmode bitmap: byte 0 = powerful, 1 = econo, 5 = streamer (Faikout).
-          // '3' = available on this unit. Used by haConfig() to gate switch entities.
+          // '3' = available — drives capability gating + the climate special_modes attr.
           if (payloadSize >= 3) _hasPowerful = (payload[2] == '3');
           if (payloadSize >= 4) _hasEcono    = (payload[3] == '3');
           if (payloadSize >= 8) _hasStreamer = (payload[7] == '3');
         } else if (payload[0] == '0' && payload[1] == '4') {
-          _diag.FU04 = dataHex;
+          _diag.FU04 = getHEXformatted(&payload[2], payloadSize - 2);
         }
         return true;
       }
@@ -755,15 +752,12 @@ bool DaikinController::parseResponse(ACResponse *response)
         // statistics can confirm/refute the duplication over weeks rather than
         // on a single sample. Decode reverse-ASCII decimal; keep raw hex if the
         // payload isn't purely numeric.
-        if (cmd2_in == 'A' || cmd2_in == 'B' || cmd2_in == 'F' || cmd2_in == 'g') {
+        String *slot = (cmd2_in == 'A') ? &_diag.RA : (cmd2_in == 'B') ? &_diag.RB
+                     : (cmd2_in == 'F') ? &_diag.RF : (cmd2_in == 'g') ? &_diag.Rg
+                     : nullptr;
+        if (slot) {
           int16_t v = s21_ascii_decimal(payload, payloadSize);
-          String sv = (v < 0) ? hex : String(v);
-          switch (cmd2_in) {
-            case 'A': _diag.RA = sv; break;
-            case 'B': _diag.RB = sv; break;
-            case 'F': _diag.RF = sv; break;
-            case 'g': _diag.Rg = sv; break;
-          }
+          *slot = (v < 0) ? hex : String(v);
         }
         Log.ln(TAG, "S%c raw (%d bytes): %s", cmd2_in, payloadSize, hex.c_str());
         return true;
