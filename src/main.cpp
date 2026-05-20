@@ -2556,7 +2556,7 @@ void haConfig()
   }
 
   if (ac.supportsLouverAngle()) {
-    publishMQTTSensorConfig("Louver Angle", "_louver_angle", HA_vane_vertical_icon, "°", NULL, ha_state_topic, jsonValueTemplate("louverAngle"), ha_sensor_louver_angle_config_topic);
+    publishMQTTSensorConfig("Louver Angle", "_louver_angle", HA_vane_vertical_icon, "°", NULL, ha_state_topic, jsonValueTemplate("louverAngle"), ha_sensor_louver_angle_config_topic, "", "measurement");
   }
 
   // Timers as writable number entities (no entity_category → land in Controls,
@@ -2682,7 +2682,7 @@ void haConfig()
       publishMQTTSensorConfig("Humidity", "_humidity", "mdi:water-percent",
         "%", "humidity",
         ha_state_topic, jsonValueTemplate("humidity"),
-        diagPrefix + "humidity/config");
+        diagPrefix + "humidity/config", "", "measurement");
     }
 
     // Drop diag entities removed in 1.4-b5: FL/FS/RW/FU02 proved constant/useless
