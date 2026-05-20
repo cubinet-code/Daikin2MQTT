@@ -19,10 +19,11 @@ FTKD behavior is unchanged.
   (High=`0x04`, Low=`0x08`, Off=`0x0C`) and corrected both the write and read — High is now a
   distinct bright level. Live-verified on FTKD.
 - **Special-mode entities no longer appear on units that can't use them.** On FTKC/FTKQ
-  (which lack the FU00 special-mode extension), Powerful, Econo, Comfort Airflow and LED
-  Brightness used to show in Home Assistant but their writes silently bounced. They are now
-  gated on the FU00 capability so they only appear where they actually work. FTKD keeps all of
-  them; legacy v0/v1 units are unaffected (they keep the previous F6/F7 gate).
+  (which lack the FU00 special-mode extension), Powerful, Econo and Comfort Airflow used to show
+  in Home Assistant but their writes silently bounced. They are now gated on the FU00 capability
+  so they only appear where they actually work. FTKD keeps all of them; legacy v0/v1 units are
+  unaffected (they keep the previous F6/F7 gate). LED brightness is *not* FU00-gated — it's a
+  display setting on F6/D6 byte 3 that all v2 units support, so it stays available everywhere.
 
 ### Changed
 - **Default fan-speed levels is now 5** (was 3) — most v2 wall units are 5-speed, so they now

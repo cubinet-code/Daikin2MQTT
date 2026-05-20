@@ -224,7 +224,10 @@ public:
   // Display (LED) brightness rides F6/D6 byte 3 — only present on v2+ units that
   // return a 4-byte G6 payload. _ledBrightnessSeen latches true once the G6 parser
   // sees that 4th byte, so we don't expose the select on units that lack it.
-  bool supportsLEDBrightness() { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)) && _ledBrightnessSeen && _fu00Seen; };
+  // NOT FU00-gated: LED brightness is F6/D6 byte 3, a display setting present on
+  // every v2 unit that returns a 4-byte G6 (incl. FTKC/FTKQ) — not part of the
+  // FU00 en_spmode extension. _ledBrightnessSeen latches on that 4th byte.
+  bool supportsLEDBrightness() { return _protocolVersion >= 2 && !(s21SkipMask & (1ULL << S21_QUERY_F6)) && _ledBrightnessSeen; };
   bool supportsVerticalSwing() { return _supportsVerticalSwing; };  // from F2 capability flags
   bool supportsHorizontalSwing() { return _supportsHorizontalSwing; }; // from F2 capability flags
   bool supportsEnergyMeter() { return !(s21SkipMask & (1ULL << S21_QUERY_FM)); };
