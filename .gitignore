@@ -5,5 +5,9 @@ CLAUDE.md
 .mcp.json
 releases/*.bin
 .env
-docs
+docs/*
+# Track the S21 protocol reference (the rest of docs/ stays local-only).
+# Note: ignore docs/* (not docs) so this re-include works — git can't
+# re-include a file whose parent directory is itself ignored.
+!docs/S21_PROTOCOL_REFERENCE.md
 logs/
