@@ -2465,7 +2465,7 @@ void haConfig()
     publishMQTTSensorConfig("Compressor Frequency", "_comp_freq", HA_sine_wave_icon, "Hz", NULL, ha_state_topic, jsonValueTemplate("compressorFrequency"), ha_sensor_comp_freq_config_topic);
   }
   publishMQTTSensorConfig("Error Code", "_error_code", HA_alert, NULL, NULL, ha_state_topic, jsonValueTemplate("errorCode"), ha_sensor_error_code_config_topic, "diagnostic");
-  publishMQTTSensorConfig("Timer", "_timer_mode", "mdi:timer-outline", NULL, NULL, ha_state_topic, jsonValueTemplate("timerMode"), ha_sensor_timer_mode_config_topic, "diagnostic");
+  publishMQTTSensorConfig("Timer", "_timer_mode", "mdi:timer-outline", NULL, NULL, ha_state_topic, jsonValueTemplate("timerMode"), ha_sensor_timer_mode_config_topic);
 
   if (proto == PROTOCOL_S21 && ac.supportsEnergyMeter()){
     publishMQTTSensorConfig("Energy Meter", "_energy_meter", HA_counter, "kWh", "energy", ha_state_topic, jsonValueTemplate("energyMeter"), ha_sensor_energy_meter_config_topic);
@@ -2476,7 +2476,7 @@ void haConfig()
   }
 
   if (ac.supportsLouverAngle()) {
-    publishMQTTSensorConfig("Louver Angle", "_louver_angle", HA_vane_vertical_icon, "°", NULL, ha_state_topic, jsonValueTemplate("louverAngle"), ha_sensor_louver_angle_config_topic, "diagnostic");
+    publishMQTTSensorConfig("Louver Angle", "_louver_angle", HA_vane_vertical_icon, "°", NULL, ha_state_topic, jsonValueTemplate("louverAngle"), ha_sensor_louver_angle_config_topic);
   }
 
   // Timers as writable number entities (no entity_category → land in Controls,
@@ -2574,7 +2574,7 @@ void haConfig()
     // against compressor frequency changes (compressor stayed idle during testing).
     publishMQTTSensorConfig("Compressor Load (Rb)", "_load_signal", "mdi:gauge", NULL, NULL,
       ha_state_topic, jsonValueTemplate("loadSignal"),
-      diagPrefix + "load_signal/config", "diagnostic");
+      diagPrefix + "load_signal/config");
     // Humidity is published only when a real sensor is detected (Re != "050"
     // placeholder, or F9.b2 != 0xFF). FTKD15ZV2S has no sensor — entity hidden.
     if (ac.supportsHumidity()) {
